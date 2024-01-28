@@ -26,7 +26,11 @@ readonly CONST_QEMU_DEFAULT_RAM="256M"
 readonly CONST_QEMU_BIOS_PC=""
 readonly CONST_QEMU_BIOS_IA32_EFI="bios/ovmf/ia32/OVMF.fd"
 readonly CONST_QEMU_BIOS_X64_EFI="bios/ovmf/x64/OVMF.fd"
-readonly CONST_QEMU_STORAGE_ARGS="-drive driver=raw,index=0,if=floppy,file=floppy0.img -drive driver=raw,node-name=hdd0,file.driver=file,file.filename=hdd0.img"
+readonly CONST_QEMU_STORAGE_ARGS="-drive driver=raw,index=0,if=floppy,file=floppy0.img -drive driver=raw,node-name=hdd0,file.driver=file,file.filename=hdd0.img -device ahci,id=ahci \
+-drive file=hdd1.img,format=raw,if=none,id=disk1 \
+-device ide-hd,drive=disk1,bus=ahci.0 \
+-drive file=hdd2.img,format=raw,if=none,id=disk2 \
+-device ide-hd,drive=disk2,bus=ahci.1"
 readonly CONST_QEMU_NETWORK_ARGS="-nic model=rtl8139,id=eth0,hostfwd=udp::1797-:1797 -object filter-dump,id=filter0,netdev=eth0,file=eth0.dump"
 readonly CONST_QEMU_ARGS="-boot d -vga std -rtc base=localtime -device isa-debug-exit -smp 2"
 readonly CONST_QEMU_OLD_AUDIO_ARGS="-soundhw pcspk -device sb16,irq=10,dma=1"
