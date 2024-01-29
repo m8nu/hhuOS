@@ -106,6 +106,7 @@ namespace Device::Storage {
         uint32_t slot = find_cmdslot(port);
 
         HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*)(port->clb);
+        cmdheader += slot;
         cmdheader->prdtl = 1;	// PRDT entries count
         cmdheader->pmp = 0;		// Port multiplier value
 	    cmdheader->a = 0;		// ATAPI
@@ -142,7 +143,7 @@ namespace Device::Storage {
         auto dba = reinterpret_cast<uint32_t*>(memoryService.mapIO(512));
         auto dbaphy = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(dba));
         cmdtbl->prdt_entry[0].dba = dbaphy;
-        cmdtbl->prdt_entry[0].dbc = 0x1FF;
+        cmdtbl->prdt_entry[0].dbc = 0x1FF; //511 bytes
 
         //Ensure that device is not busy
         while (port->tfd & (ATA_DEV_BUSY | ATA_DEV_DRQ)); 
@@ -159,8 +160,10 @@ namespace Device::Storage {
                 return false;
             }
         }
-    
-        
+
+        //get data from memory
+        FIS_DATA *data = (FIS_DATA*)(&cmdtbl->cfis);
+        log.info("FIS_TYPE: %x", data->fis_type);
     }
 
     void AhciController::initializeAvailableControllers() {
@@ -317,13 +320,6 @@ namespace Device::Storage {
         hbaMem->ports[port].cmd &= ~HBA_PxCMD_FRE;
     }
 
-    void AhciController::plugin() {
-        //TODO: Implement
-    }
-
-    void AhciController::trigger(const Kernel::InterruptFrame &frame) {
-        //TODO: Implement
-    }
 
     void AhciController::setPortinIdleState(HBA_PORT *port) {
         uint32_t timeout = 0;
@@ -481,6 +477,14 @@ namespace Device::Storage {
 	    }
         
 	    return true;
+    }
+
+    void AhciController::plugin() {
+        //TODO: Implement
+    }
+
+    void AhciController::trigger(const Kernel::InterruptFrame &frame) {
+        //TODO: Implement
     }
 
 }
