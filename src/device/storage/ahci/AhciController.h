@@ -452,10 +452,11 @@ namespace Device::Storage {
             static uint32_t find_cmdslot(HBA_PORT *port);
             static void initializeAvailableControllers();
             static void port_rebase(HBA_PORT *port, int portno);
-            static void start_cmd(uint32_t port);
-            static void stop_cmd(uint32_t port);
+            static void start_cmd(HBA_PORT *port);
+            static void stop_cmd(HBA_PORT *port);
             static void setPortinIdleState(HBA_PORT *port);
             static bool read(HBA_PORT *port, uint32_t startl, uint32_t starth, uint32_t count, uint16_t *buf);
+            static bool write(HBA_PORT *port, uint32_t startl, uint32_t starth, uint32_t count, uint16_t *buf);
             static int  identifyDevice(HBA_PORT *port);
 
             void plugin() override;

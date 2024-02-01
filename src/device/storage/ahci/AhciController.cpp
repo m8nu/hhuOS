@@ -46,7 +46,7 @@ namespace Device::Storage {
         uint32_t abar = device.readDoubleWord(Pci::BASE_ADDRESS_5);
         hbaMem = MapAHCIRegisters(abar);
         log.info("device id: %x, vendor id: %x", device.getDeviceId(), device.getVendorId());
-        log.info("ahci versio: %x", hbaMem->vs);
+        log.info("ahci version: %x", hbaMem->vs);
 
         //Ownership übernehmen (AHCI Version >= 1.2)
         biosHandoff(device);
@@ -57,16 +57,17 @@ namespace Device::Storage {
             return;
         }
 
-        //Interrupts deaktivieren
-        hbaMem->ghc &= ~(1 << 1);
+        //Interrupts aktivieren
+        hbaMem->ghc |= (1 << 1);
 
         //CAP.NP auslesen um Anzahl der Ports zu ermitteln, die vom HBA unterstützt werden
+        auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
         uint32_t numPortsAllowed = (hbaMem->cap & 0x1F) + 1;
         log.info("Number of ports allowed: %u", numPortsAllowed);
 
         log.info("pi: %x", hbaMem->pi);
 
-        for (uint8_t i = 0; i < AHCI_MAX_PORTS; i++) { 
+        for (uint8_t i = 0; i < 1; i++) { //AHCI_MAX_PORTS
             if(hbaMem->pi & (1 << i)){
 
                 setPortinIdleState(&hbaMem->ports[i]);
@@ -83,6 +84,9 @@ namespace Device::Storage {
                 //Clear interrupt status
                 hbaMem->ports[i].is = 0xFFFFFFFF;
 
+                //Enable interrupts
+                hbaMem->ports[i].ie = 0xffffffff;
+                
                 //Detect what device is connected to the port
                 int dt = check_type(&hbaMem->ports[i]);
 			    if (dt == AHCI_DEV_SATA){
@@ -111,24 +115,27 @@ namespace Device::Storage {
         log.info("slot: %u", slot);
 
         HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*)(port->clb);
+        log.info("identify clb: %x", port->clb);
         cmdheader += slot;
         cmdheader->prdtl = 1;	// PRDT entries count
         cmdheader->pmp = 0;		// Port multiplier value
 	    cmdheader->a = 0;   	// ATAPI
 	    cmdheader->w = 0;		// Write, 1: H2D, 0: D2H
-	    cmdheader->p = 1;		// Prefetchable 0
+	    cmdheader->p = 0;		// Prefetchable 0
         cmdheader->r = 0;		// Reset
 	    cmdheader->b = 0;	    // BIST
-	    cmdheader->c = 1;	    // Clear busy upon R_OK 0
-        cmdheader->cfl = 5;    // Command FIS length
+	    cmdheader->c = 0;	    // Clear busy upon R_OK 0
+        cmdheader->cfl = 5;    // Command FIS length - sizeof(FIS_REG_H2D) / 4;
 
         //Byte count field is 0 based reprensentation of 512 bytes, the size of data we expect on return
         //cmdheader->prdbc = 511;
 
         HBA_CMD_TBL *cmdtbl = (HBA_CMD_TBL*)(cmdheader->ctba);
+        log.info("identify ctba: %x", cmdheader->ctba);
 
         //FIS
         FIS_REG_H2D *cmdfis = (FIS_REG_H2D*)(&cmdtbl->cfis);
+        log.info("identify cfis: %x", cmdtbl->cfis);
         cmdfis->fis_type = FIS_TYPE_REG_H2D; //0x27
         cmdfis->c = 1; //Command
         cmdfis->command = ATA_IDENTIFY_DEVICE; //0xEC
@@ -144,7 +151,6 @@ namespace Device::Storage {
         cmdfis->control  = 0x08;
         cmdfis->rsv0     = 0x00;
 
-
         auto dba = reinterpret_cast<uint32_t*>(memoryService.mapIO(sizeof(SATA_ident_t)));
         auto dbaphy = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(dba));
         cmdtbl->prdt_entry[0].dba = dbaphy;
@@ -154,7 +160,7 @@ namespace Device::Storage {
         while (port->tfd & (ATA_DEV_BUSY | ATA_DEV_DRQ)); 
                                                                         
         //Issue command
-        port->ci = 1;
+        port->ci = 1 << slot;
 
         //Wait for command completion
         while (1) {
@@ -166,9 +172,12 @@ namespace Device::Storage {
             }
         }
 
+        log.info("port->ie: %x", port->ie);
+        log.info("port->is: %x", port->is);
+
         SATA_ident_t *SATA_Identify_info = (SATA_ident_t*)dba;
         log.info("sata_identify_info->seriel_no: %s", SATA_Identify_info->serial_no);
-        log.info("sata_identify_info->firmware_rev: %s", SATA_Identify_info->fw_rev);
+        //log.info("sata_identify_info->firmware_rev: %s", SATA_Identify_info->fw_rev);
         log.info("sata_identify_info->lba_cap: %x", SATA_Identify_info->lba_capacity);
         log.info("sata_identify_info->integrity: %x", SATA_Identify_info->integrity);
     }
@@ -300,30 +309,31 @@ namespace Device::Storage {
     }
 
     //start command engine (OSDEV)
-    void AhciController::start_cmd(uint32_t port) {
+    void AhciController::start_cmd(HBA_PORT *port) {
         // Wait until CR (bit15) is cleared
-        while (hbaMem->ports[port].cmd & HBA_PxCMD_CR);
+        while (port->cmd & HBA_PxCMD_CR);
 
         // Set FRE (bit4) and ST (bit0)
-        hbaMem->ports[port].cmd |= HBA_PxCMD_FRE;
-        hbaMem->ports[port].cmd |= HBA_PxCMD_ST;
+        port->cmd |= HBA_PxCMD_FRE;
+        port->cmd |= HBA_PxCMD_ST;
     }
 
     //Stop command engine (OSDEV)
-    void AhciController::stop_cmd(uint32_t port) {
+    void AhciController::stop_cmd(HBA_PORT *port) {
         // Clear ST (bit0)
-        hbaMem->ports[port].cmd &= ~HBA_PxCMD_ST;
+        port->cmd &= ~HBA_PxCMD_ST;
+
+        // Clear FRE (bit4)
+        port->cmd &= ~HBA_PxCMD_FRE;
 
         // Wait until FR (bit14), CR (bit15) are cleared
         while(1) {
-            if (hbaMem->ports[port].cmd & HBA_PxCMD_FR)
+            if (port->cmd & HBA_PxCMD_FR)
                 continue;
-            if (hbaMem->ports[port].cmd & HBA_PxCMD_CR)
+            if (port->cmd & HBA_PxCMD_CR)
                 continue;
             break;
         }
-        // Clear FRE (bit4)
-        hbaMem->ports[port].cmd &= ~HBA_PxCMD_FRE;
     }
 
 
@@ -359,18 +369,20 @@ namespace Device::Storage {
     void AhciController::port_rebase(HBA_PORT *port, int portno){
         auto &memoryService = Kernel::System::getService<Kernel::MemoryService>(); 
 
-        AhciController::stop_cmd(portno); //Stop command engine
+        AhciController::stop_cmd(port); //Stop command engine
 
         //Command List
         auto cmdList = reinterpret_cast<uint32_t*>(memoryService.mapIO(sizeof(HBA_CMD_HEADER) * 32));
         auto cmdListPhysicalAdress = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(cmdList));
         port->clb = cmdListPhysicalAdress;
+        log.info("clb: %x", cmdListPhysicalAdress);
         port->clbu = 0;
 
         //FIS
-        auto fis = reinterpret_cast<uint32_t*>(memoryService.mapIO(sizeof(HBA_FIS)));
+        auto fis = reinterpret_cast<uint32_t*>(memoryService.mapIO(256)); //sizeof(HBA_FIS)
         auto fisPhysicalAdress = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(fis));
         port->fb = fisPhysicalAdress;
+        log.info("fb: %x", fisPhysicalAdress);
         port->fbu = 0;
 
         //Command Table
@@ -383,10 +395,9 @@ namespace Device::Storage {
             auto cmdtblPhysicalAdress = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(cmdtbl));
             cmdheader[i].ctba = cmdtblPhysicalAdress;
             cmdheader[i].ctbau = 0;
-
         }
         
-        AhciController::start_cmd(portno);
+        AhciController::start_cmd(port);
 
     }
 
@@ -399,13 +410,13 @@ namespace Device::Storage {
 	    if (slot == -1)
 		    return false;
 
-        log.info("check_type: %u", check_type(0));
+        log.info("check_type: %u", check_type(port));
 
 	    HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*)port->clb;
 	    cmdheader += slot;
 	    cmdheader->cfl = sizeof(FIS_REG_H2D)/sizeof(uint32_t);	// Command FIS size
 	    cmdheader->w = 0;		// Read from device
-	    cmdheader->prdtl = (uint16_t)((count-1)>>4) + 1;	// PRDT entries count
+	    cmdheader->prdtl = 1;	// PRDT entries count (uint16_t)((count-1)>>4) + 1;
  
         log.info("PRDT entries count: %u", cmdheader->prdtl);
         
@@ -443,9 +454,9 @@ namespace Device::Storage {
 	    cmdfis->lba2 = (uint8_t)(startl>>16);
 	    cmdfis->device = 1<<6;	// LBA mode
  
-	    cmdfis->lba3 = (uint8_t)(startl>>24);
-	    cmdfis->lba4 = (uint8_t)starth;
-	    cmdfis->lba5 = (uint8_t)(starth>>8);
+	    cmdfis->lba3 = (uint8_t)(starth); //(startl>>24)
+	    cmdfis->lba4 = (uint8_t)(starth >> 8);
+	    cmdfis->lba5 = (uint8_t)(starth>>16);
     
 	    cmdfis->countl = count & 0xFF;
 	    cmdfis->counth = (count >> 8) & 0xFF;
@@ -483,6 +494,61 @@ namespace Device::Storage {
 	    }
         
 	    return true;
+    }
+
+    bool AhciController::write(HBA_PORT *port, uint32_t startl, uint32_t starth, uint32_t count, uint16_t *buf){
+        uint64_t spin = 0;
+        while(port->tfd & (ATA_DEV_BUSY | ATA_DEV_DRQ) && spin < 1000000){
+            spin++;
+        }
+        if(spin == 1000000){
+            log.error("Port is hung");
+            return false;
+        }
+
+        port->is = (uint32_t) -1; //Clear pending interrupt bits
+
+        HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*)port->clb;
+        cmdheader->cfl = sizeof(FIS_REG_H2D)/sizeof(uint32_t); //Command FIS size
+        cmdheader->w = 1; //Write to device
+        cmdheader->prdtl = 1; //PRDT entries count
+
+        HBA_CMD_TBL *cmdtbl = (HBA_CMD_TBL*)(cmdheader->ctba);
+        cmdtbl->prdt_entry[0].dba = (uint32_t)buf;
+        cmdtbl->prdt_entry[0].dbc = (count << 9) - 1; //512 bytes per sector
+        cmdtbl->prdt_entry[0].i = 1;
+
+        FIS_REG_H2D *cmdfis = (FIS_REG_H2D*)(&cmdtbl->cfis);
+        cmdfis->fis_type = FIS_TYPE_REG_H2D;
+        cmdfis->c = 1; //Command
+        cmdfis->command = ATA_CMD_WRITE_DMA_EX;
+
+        cmdfis->lba0 = (uint8_t)startl;
+        cmdfis->lba1 = (uint8_t)(startl >> 8);
+        cmdfis->lba2 = (uint8_t)(startl >> 16);
+        cmdfis->device = 1 << 6; //LBA mode
+
+        cmdfis->lba3 = (uint8_t)(starth); //(startl>>24)
+        cmdfis->lba4 = (uint8_t)(starth >> 8);
+        cmdfis->lba5 = (uint8_t)(starth >> 16);
+
+        cmdfis->countl = count & 0xFF;
+        cmdfis->counth = (count >> 8) & 0xFF;
+
+        port->ci = 1; //Issue command
+
+        //Wait for completion
+        while(1){
+            if((port->ci & 1) == 0)
+                break;
+            if(port->is & HBA_PxIS_TFES){ //Task file error
+                log.error("Write disk error");
+                return false;
+            }
+        }
+
+        return true;
+
     }
 
     void AhciController::plugin() {
