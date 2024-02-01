@@ -20,7 +20,7 @@ namespace Kernel {
 
 namespace Device::Storage {
 
-    typedef struct SATA_ident{
+    typedef volatile struct SATA_ident{
         unsigned short   config;      /* lots of obsolete bit flags */
         unsigned short   cyls;      /* obsolete */
         unsigned short   reserved2;   /* special config */
@@ -179,7 +179,7 @@ namespace Device::Storage {
         uint8_t  rsv1[4];	// Reserved
     } FIS_REG_H2D;
 
-    typedef struct tagHBA_PRDT_ENTRY{
+    typedef volatile struct tagHBA_PRDT_ENTRY{
     	uint32_t dba;		// Data base address
     	uint32_t dbau;		// Data base address upper 32 bits
     	uint32_t rsv0;		// Reserved
@@ -190,7 +190,7 @@ namespace Device::Storage {
     	uint32_t i:1;		// Interrupt on completion
     } HBA_PRDT_ENTRY;
 
-    typedef struct tagHBA_CMD_HEADER{   
+    typedef volatile struct tagHBA_CMD_HEADER{   
 	    // DW0
 	    uint8_t  cfl:5;		// Command FIS length in DWORDS, 2 ~ 16
 	    uint8_t  a:1;		// ATAPI
@@ -217,7 +217,7 @@ namespace Device::Storage {
 	    uint32_t rsv1[4];	// Reserved
     } HBA_CMD_HEADER;
 
-    typedef struct tagHBA_CMD_TBL{
+    typedef volatile struct tagHBA_CMD_TBL{
         // 0x00
         uint8_t  cfis[64];	// Command FIS
 
@@ -288,7 +288,7 @@ namespace Device::Storage {
         FIS_TYPE_DEV_BITS	= 0xA1,	// Set device bits FIS - device to host
     };
 
-    typedef struct tagFIS_REG_D2H{
+    typedef volatile struct tagFIS_REG_D2H{
     	// DWORD 0
     	uint8_t  fis_type;    // FIS_TYPE_REG_D2H
     
@@ -321,7 +321,7 @@ namespace Device::Storage {
     	uint8_t  rsv4[4];     // Reserved
     } FIS_REG_D2H;
 
-    typedef struct tagFIS_DMA_SETUP{
+    typedef volatile struct tagFIS_DMA_SETUP{
 	    // DWORD 0
 	    uint8_t  fis_type;	// FIS_TYPE_DMA_SETUP
     
@@ -351,7 +351,7 @@ namespace Device::Storage {
     
     } FIS_DMA_SETUP;
 
-    typedef struct tagFIS_PIO_SETUP{
+    typedef volatile struct tagFIS_PIO_SETUP{
 	    // DWORD 0
 	    uint8_t  fis_type;	// FIS_TYPE_PIO_SETUP
     
@@ -387,7 +387,7 @@ namespace Device::Storage {
 	    uint8_t  rsv4[2];	// Reserved
     } FIS_PIO_SETUP;
 
-    typedef struct tagFIS_DEV_BITS {
+    typedef volatile struct tagFIS_DEV_BITS {
         uint8_t fis_type;
         uint8_t pmport:4;
         uint8_t rsvd[2];
@@ -400,7 +400,7 @@ namespace Device::Storage {
         uint8_t error;
     } FIS_DEV_BITS;
 
-    typedef struct tagFIS_DATA {
+    typedef volatile struct tagFIS_DATA {
 	    // DWORD 0
 	    uint8_t  fis_type;	// FIS_TYPE_DATA
     

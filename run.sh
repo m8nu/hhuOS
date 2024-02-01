@@ -254,7 +254,7 @@ run_qemu() {
     command="${command} -bios ${QEMU_BIOS}"
   fi
 
-  command="${command} -m ${QEMU_RAM} -cpu ${QEMU_CPU} ${QEMU_ARGS} ${QEMU_BOOT_DEVICE} ${QEMU_STORAGE_ARGS} ${QEMU_NETWORK_ARGS} ${QEMU_AUDIO_ARGS}"
+  command="${command} -m ${QEMU_RAM} -cpu ${QEMU_CPU} ${QEMU_ARGS} ${QEMU_BOOT_DEVICE} ${QEMU_STORAGE_ARGS} ${QEMU_NETWORK_ARGS} ${QEMU_AUDIO_ARGS} -trace enable=ahci_*"
   
   printf "Running: %s\\n" "${command}"
 

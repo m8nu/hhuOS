@@ -41,7 +41,7 @@ namespace Device::Storage {
     }
 
     AhciController::AhciController(const PciDevice &device) {
-
+        auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
         //ABAR auslesen und mappen
         uint32_t abar = device.readDoubleWord(Pci::BASE_ADDRESS_5);
         hbaMem = MapAHCIRegisters(abar);
@@ -61,7 +61,6 @@ namespace Device::Storage {
         hbaMem->ghc |= (1 << 1);
 
         //CAP.NP auslesen um Anzahl der Ports zu ermitteln, die vom HBA unterstützt werden
-        auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
         uint32_t numPortsAllowed = (hbaMem->cap & 0x1F) + 1;
         log.info("Number of ports allowed: %u", numPortsAllowed);
 
@@ -151,7 +150,7 @@ namespace Device::Storage {
         cmdfis->control  = 0x08;
         cmdfis->rsv0     = 0x00;
 
-        auto dba = reinterpret_cast<uint32_t*>(memoryService.mapIO(sizeof(SATA_ident_t)));
+        auto dba = reinterpret_cast<uint32_t*>(memoryService.mapIO(512));
         auto dbaphy = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(dba));
         cmdtbl->prdt_entry[0].dba = dbaphy;
         cmdtbl->prdt_entry[0].dbc = 0x1FF; //511 bytes
