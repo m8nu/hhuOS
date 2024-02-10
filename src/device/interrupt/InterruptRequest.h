@@ -41,6 +41,7 @@ enum InterruptRequest : uint8_t {
     FPU = 0x0D,
     PRIMARY_ATA = 0x0E,
     SECONDARY_ATA = 0x0F,
+    AHCI = 0x10,
     // Other devices
 };
 

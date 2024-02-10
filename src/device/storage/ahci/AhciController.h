@@ -206,8 +206,8 @@ namespace Device::Storage {
 	    uint16_t prdtl;		// Physical region descriptor table length in entries
     
 	    // DW1
-	    volatile
-	    uint32_t prdbc;		// Physical region descriptor byte count transferred
+	    volatile 
+        uint32_t prdbc;		// Physical region descriptor byte count transferred
     
 	    // DW2, 3
 	    uint32_t ctba;		// Command table descriptor base address
@@ -454,7 +454,6 @@ namespace Device::Storage {
             static void port_rebase(HBA_PORT *port, int portno);
             static void start_cmd(HBA_PORT *port);
             static void stop_cmd(HBA_PORT *port);
-            static void setPortinIdleState(HBA_PORT *port);
             static bool read(HBA_PORT *port, uint32_t startl, uint32_t starth, uint32_t count, uint16_t *buf);
             static bool write(HBA_PORT *port, uint32_t startl, uint32_t starth, uint32_t count, uint16_t *buf);
             static int  identifyDevice(HBA_PORT *port);
@@ -490,8 +489,8 @@ namespace Device::Storage {
             static const int AHCI_DEV_SATAPI = 4;
 
             // Definition der Port-Status-Codes
-            static const int HBA_PORT_IPM_ACTIVE = 1;
-            static const int HBA_PORT_DET_PRESENT = 3;
+            static const int HBA_PORT_IPM_ACTIVE = 0x01;
+            static const int HBA_PORT_DET_PRESENT = 0x03;
 
             static const uint16_t HBA_PxCMD_ST  =  0x0001;
             static const uint16_t HBA_PxCMD_FRE =  0x0010;
