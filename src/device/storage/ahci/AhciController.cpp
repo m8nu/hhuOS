@@ -76,7 +76,7 @@ namespace Device::Storage {
                 hbaMem->ports[i].cmd |= (1 << 4);
 
                 //Clear errors
-                hbaMem->ports[i].serr = ;
+                hbaMem->ports[i].serr = 0xFFFFFFFF;
 
                 //Clear interrupt status
                 hbaMem->ports[i].is = 0xFFFFFFFF;
