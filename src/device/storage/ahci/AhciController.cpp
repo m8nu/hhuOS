@@ -57,15 +57,9 @@ namespace Device::Storage {
             return;
         }
 
-
-
-        //Interrupts deaktivieren
-        hbaMem->ghc &= ~(1 << 1);
-
         //CAP.NP auslesen um Anzahl der Ports zu ermitteln, die vom HBA unterstützt werden
         uint8_t numPortsAllowed = (hbaMem->cap & 0x1F) + 1;
         log.info("Number of ports allowed: %u", numPortsAllowed);
-
 
         for (uint8_t i = 0; i < AHCI_MAX_PORTS; i++) { //AHCI_MAX_PORTS
             if(hbaMem->pi & (1 << i)){
@@ -82,13 +76,13 @@ namespace Device::Storage {
                 hbaMem->ports[i].cmd |= (1 << 4);
 
                 //Clear errors
-                hbaMem->ports[i].serr = 0xFFFFFFFF;
+                hbaMem->ports[i].serr = ;
 
                 //Clear interrupt status
                 hbaMem->ports[i].is = 0xFFFFFFFF;
 
                 //Enable interrupts
-                hbaMem->ports[i].ie = 0xffffffff;
+                hbaMem->ports[i].ie = 0xFFFFFFFF;
 
                 log.info("Port Control: %x", hbaMem->ports[i].sctl);
                 
@@ -186,8 +180,8 @@ namespace Device::Storage {
 
 
 
-        //SATA_ident_t *SATA_Identify_info = (SATA_ident_t*)cmdtbl->prdt_entry[0].dba;
-        //log.info("sata_identify_info->seriel_no: %s", SATA_Identify_info->serial_no);
+        SATA_ident_t *SATA_Identify_info = (SATA_ident_t*)cmdtbl->prdt_entry[0].dba;
+        log.info("sata_identify_info->seriel_no: %s", SATA_Identify_info->serial_no);
         //log.info("sata_identify_info->firmware_rev: %s", SATA_Identify_info->fw_rev);
         //log.info("sata_identify_info->lba_cap: %x", SATA_Identify_info->lba_capacity);
         //log.info("sata_identify_info->integrity: %x", SATA_Identify_info->integrity);
@@ -360,7 +354,7 @@ namespace Device::Storage {
         auto cmdList = reinterpret_cast<uint32_t*>(memoryService.mapIO(sizeof(HBA_CMD_HEADER) * 32));
         auto cmdListPhysicalAdress = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(cmdList));
         port->clb = cmdListPhysicalAdress;
-        log.info("clb: %x", cmdListPhysicalAdress);
+        log.info("clb size: %x", sizeof(HBA_CMD_HEADER) * 32);
         port->clbu = 0;
 
         //FIS

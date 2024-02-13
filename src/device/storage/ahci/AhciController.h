@@ -442,7 +442,6 @@ namespace Device::Storage {
             explicit AhciController(const PciDevice &pciDevice);
 
             static Kernel::Logger log;
-            static const uint32_t AHCI_BASE = 0x400000;
 
             static int biosHandoff(const Device::PciDevice &device);
             static int enableAHCIController(const Device::PciDevice &device);
@@ -451,17 +450,23 @@ namespace Device::Storage {
             static void portReset(HBA_PORT *port);
             static uint32_t find_cmdslot(HBA_PORT *port);
             static void initializeAvailableControllers();
+            static void IDENTIFYdrive(int portno);
             static void port_rebase(HBA_PORT *port, int portno);
             static void start_cmd(HBA_PORT *port);
             static void stop_cmd(HBA_PORT *port);
             static bool read(HBA_PORT *port, uint32_t startl, uint32_t starth, uint32_t count, uint16_t *buf);
             static bool write(HBA_PORT *port, uint32_t startl, uint32_t starth, uint32_t count, uint16_t *buf);
+            static void probe_ports(HBA_MEM *abar);
             static int  identifyDevice(HBA_PORT *port);
+
+            static int SATA_Commander(HBA_PORT *port, uint16_t Command, uint8_t rw, uint32_t buf, uint32_t prdtl, uint32_t dbc, uint32_t startl, uint32_t starth, uint32_t count);
 
             void plugin() override;
             void trigger(const Kernel::InterruptFrame &frame) override;
 
         private:
+            static const constexpr uint8_t ATA_CMD_IDENTIFY = 0xEC;
+
             static const constexpr uint8_t PCI_SUBCLASS_AHCI = 0x06; //Indicates that this is a Serial ATA device
             static const constexpr uint32_t AHCI_MAX_PORTS = 32;
 
