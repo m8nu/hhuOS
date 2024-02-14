@@ -28,6 +28,7 @@ namespace Kernel {
 namespace Device::Storage {
     Kernel::Logger AhciController::log = Kernel::Logger::get("AHCI");
     HBA_MEM *hbaMem;
+    virtual_port_addr vpa[32];
 
     HBA_MEM *MapAHCIRegisters(uint32_t baseAddress) {
         auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
@@ -76,7 +77,7 @@ namespace Device::Storage {
                 hbaMem->ports[i].cmd |= (1 << 4);
 
                 //Clear errors
-                hbaMem->ports[i].serr = ;
+                hbaMem->ports[i].serr = 0xFFFFFFFF;
 
                 //Clear interrupt status
                 hbaMem->ports[i].is = 0xFFFFFFFF;
@@ -102,7 +103,6 @@ namespace Device::Storage {
 			    }else{
 			    	log.info("No drive found at port %d", i);
 			    }
-            
             }
 		}
     }
@@ -117,7 +117,8 @@ namespace Device::Storage {
         uint32_t slot = find_cmdslot(port);
         log.info("slot: %u", slot);
 
-        HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*)(port->clb);
+        //HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*)(port->clb);
+        HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*) vpa[0].cmdList;
         log.info("identify clb: %x", port->clb);
         cmdheader += slot;
         cmdheader->prdtl = 1;	// PRDT entries count
@@ -128,17 +129,17 @@ namespace Device::Storage {
         cmdheader->r = 0;		// Reset
 	    cmdheader->b = 0;	    // BIST
 	    cmdheader->c = 0;	    // Clear busy upon R_OK 0
-        cmdheader->cfl = 5;    // Command FIS length - sizeof(FIS_REG_H2D) / 4;
+        cmdheader->cfl = 5;    // Command FIS length | sizeof(FIS_REG_H2D) / 4;
 
         //Byte count field is 0 based reprensentation of 512 bytes, the size of data we expect on return
         //cmdheader->prdbc = 511;
 
-        HBA_CMD_TBL *cmdtbl = (HBA_CMD_TBL*)(cmdheader->ctba);
-        log.info("identify ctba: %x", cmdheader->ctba);
+        HBA_CMD_TBL *cmdtbl = (HBA_CMD_TBL*) vpa[0].commandTable[slot];
+        //HBA_CMD_TBL *cmdtbl = (HBA_CMD_TBL*)(cmdheader->ctba);
 
         //FIS
-        FIS_REG_H2D *cmdfis = (FIS_REG_H2D*)(&cmdtbl->cfis);
-        log.info("identify cfis: %x", cmdtbl->cfis);
+        FIS_REG_H2D *cmdfis = (FIS_REG_H2D*) vpa[0].fis;
+        //FIS_REG_H2D *cmdfis = (FIS_REG_H2D*)(&cmdtbl->cfis);
         cmdfis->fis_type = FIS_TYPE_REG_H2D; //0x27
         cmdfis->c = 1; //Command
         cmdfis->command = ATA_IDENTIFY_DEVICE; //0xEC
@@ -178,13 +179,11 @@ namespace Device::Storage {
         log.info("port->ie: %x", port->ie);
         log.info("port->is: %x", port->is);
 
-
-
-        SATA_ident_t *SATA_Identify_info = (SATA_ident_t*)cmdtbl->prdt_entry[0].dba;
+        SATA_ident_t *SATA_Identify_info = (SATA_ident_t*)dba;
         log.info("sata_identify_info->seriel_no: %s", SATA_Identify_info->serial_no);
-        //log.info("sata_identify_info->firmware_rev: %s", SATA_Identify_info->fw_rev);
-        //log.info("sata_identify_info->lba_cap: %x", SATA_Identify_info->lba_capacity);
-        //log.info("sata_identify_info->integrity: %x", SATA_Identify_info->integrity);
+        log.info("sata_identify_info->firmware_rev: %s", SATA_Identify_info->fw_rev);
+        log.info("sata_identify_info->lba_cap: %x", SATA_Identify_info->lba_capacity);
+        log.info("sata_identify_info->integrity: %x", SATA_Identify_info->integrity);
     }
 
 
@@ -352,25 +351,25 @@ namespace Device::Storage {
 
         //Command List
         auto cmdList = reinterpret_cast<uint32_t*>(memoryService.mapIO(sizeof(HBA_CMD_HEADER) * 32));
+        vpa[portno].cmdList = cmdList; 
         auto cmdListPhysicalAdress = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(cmdList));
         port->clb = cmdListPhysicalAdress;
-        log.info("clb size: %x", sizeof(HBA_CMD_HEADER) * 32);
         port->clbu = 0;
 
         //FIS
         auto fis = reinterpret_cast<uint32_t*>(memoryService.mapIO(256));
+        vpa[portno].fis = fis;
         auto fisPhysicalAdress = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(fis));
         port->fb = fisPhysicalAdress;
-        log.info("fb: %x", fisPhysicalAdress);
         port->fbu = 0;
 
         //Command Table
         HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*)(port->clb);
         for(int i=0;i<32;i++){
             cmdheader[i].prdtl = 8;	// 8 prdt entries per command table // 256 bytes per command table, 64+16+48+16*8
-
             // Command table offset: 40K + 8K*portno + cmdheader_index*256
             auto cmdtbl = reinterpret_cast<uint32_t*>(memoryService.mapIO(256));
+            vpa[portno].commandTable[i] = cmdtbl;
             auto cmdtblPhysicalAdress = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(cmdtbl));
             cmdheader[i].ctba = cmdtblPhysicalAdress;
             cmdheader[i].ctbau = 0;

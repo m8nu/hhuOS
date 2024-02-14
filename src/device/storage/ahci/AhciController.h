@@ -20,6 +20,13 @@ namespace Kernel {
 
 namespace Device::Storage {
 
+    typedef volatile struct virtual_port_addr{
+        uint32_t* cmdList;
+        uint32_t* fis;
+        uint32_t* commandTable[32];
+    } virtual_port_addr_t;
+
+
     typedef volatile struct SATA_ident{
         unsigned short   config;      /* lots of obsolete bit flags */
         unsigned short   cyls;      /* obsolete */
@@ -143,8 +150,7 @@ namespace Device::Storage {
                                     command for mode 03h */
         unsigned short   words236_254[19];   /* Reserved */
         unsigned short   integrity;          /* Cheksum, Signature */
-} SATA_ident_t;
-
+    } SATA_ident_t;
 
     typedef volatile struct tagFIS_REG_H2D{
         // DWORD 0
@@ -249,7 +255,8 @@ namespace Device::Storage {
         uint32_t ci;        // 0x38, command issue
         uint32_t sntf;        // 0x3C, SATA notification (SCR4:SNotification)
         uint32_t fbs;        // 0x40, FIS-based switch control
-        uint32_t rsv1[11];    // 0x44 ~ 0x6F, Reserved
+        uint32_t devslp;    // 0x44, Device Sleep
+        uint32_t rsv[10];    // 0x48 ~ 0x6F, Reserved
         uint32_t vendor[4];    // 0x70 ~ 0x7F, vendor specific
     } HBA_PORT;
 
