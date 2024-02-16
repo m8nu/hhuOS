@@ -113,6 +113,9 @@ namespace Device::Storage {
                     log.info("SATA drive found at port %d", i);
                     log.info("Port Status: %x", hbaMem->ports[i].ssts);
                     identifyDevice(&hbaMem->ports[i], i);
+
+                    auto buffer = reinterpret_cast<uint32_t*>(memoryService.mapIO(512));
+
                 }else if (dt == AHCI_DEV_SATAPI){
                     log.info("SATAPI drive found at port %d", i);
 			    }else if (dt == AHCI_DEV_SEMB){
@@ -213,6 +216,7 @@ namespace Device::Storage {
     }
 
     bool AhciController::read(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth, uint32_t count, void* buffer){
+        auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();    
 
         port->is = (uint32_t) -1;		// Clear pending interrupt bits
         int spin = 0;
@@ -228,18 +232,20 @@ namespace Device::Storage {
 
         HBA_CMD_TBL *cmdtbl = (HBA_CMD_TBL*) vpa[portno].commandTable[slot];
 
+
+        auto bufphy = memoryService.getPhysicalAddress(buffer);
         // 8K bytes (16 sectors) per PRDT
         int i = 0;
         for (i = 0; i < cmdheader->prdtl - 1; i++){
-            cmdtbl->prdt_entry[i].dba = (uint32_t)(uint64_t)buffer;
+            cmdtbl->prdt_entry[i].dba = (uint32_t)(uint64_t)bufphy;
             cmdtbl->prdt_entry[i].dbau = 0; // (uint32_t)((uint64_t)buffer >> 32);
             cmdtbl->prdt_entry[i].dbc = 0x2000 - 1;
             cmdtbl->prdt_entry[i].i = 1;
-            buffer = (uint8_t*)buffer + 0x2000;
+            bufphy = (uint8_t*)bufphy + 0x2000;
             count -= 16;
         }
 
-        cmdtbl->prdt_entry[i].dba = (uint32_t)(uint64_t)buffer;
+        cmdtbl->prdt_entry[i].dba = (uint32_t)(uint64_t)bufphy;
         cmdtbl->prdt_entry[i].dbau = 0; //(uint32_t)((uint64_t)buffer >> 32);
         cmdtbl->prdt_entry[i].dbc = (count << 9) - 1; // 512 bytes per sector
         cmdtbl->prdt_entry[i].i = 1;
@@ -295,7 +301,8 @@ namespace Device::Storage {
     }
 
     bool AhciController::write(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth, uint32_t count, void* buffer){
-        
+        auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
+
         hbaMem->is = (uint32_t) -1;		// Clear pending interrupt bits
         int slot = find_cmdslot(port);
         if (slot == -1)
@@ -309,17 +316,19 @@ namespace Device::Storage {
 
         HBA_CMD_TBL *cmdtbl = (HBA_CMD_TBL*) vpa[portno].commandTable[slot];
 
+
+        auto bufphy = memoryService.getPhysicalAddress(buffer);
         int i = 0;
         for (i = 0; i < cmdheader->prdtl - 1; i++){
-            cmdtbl->prdt_entry[i].dba = (uint32_t)(uint64_t)buffer;
+            cmdtbl->prdt_entry[i].dba = (uint32_t)(uint64_t)bufphy;
             cmdtbl->prdt_entry[i].dbau = 0; // (uint32_t)((uint64_t)buffer >> 32);
-            cmdtbl->prdt_entry[i].dbc = 0x2000 - 1;
+            cmdtbl->prdt_entry[i].dbc = 8*1024 - 1;
             cmdtbl->prdt_entry[i].i = 1;
-            buffer = (uint8_t*)buffer + 0x2000;
+            bufphy = (uint8_t*)bufphy + 4*1024;
             count -= 16;
         }
 
-        cmdtbl->prdt_entry[i].dba = (uint32_t)(uint64_t)buffer;
+        cmdtbl->prdt_entry[i].dba = (uint32_t)(uint64_t)bufphy;
         cmdtbl->prdt_entry[i].dbau = 0; //(uint32_t)((uint64_t)buffer >> 32);
         cmdtbl->prdt_entry[i].dbc = (count << 9) - 1; // 512 bytes per sector
         cmdtbl->prdt_entry[i].i = 1;
@@ -366,7 +375,6 @@ namespace Device::Storage {
 
         return true;
     }
-
 
     void AhciController::initializeAvailableControllers() {
         Util::Array<PciDevice> devices = Pci::search(Pci::Class::MASS_STORAGE, PCI_SUBCLASS_AHCI);
