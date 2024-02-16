@@ -1,6 +1,7 @@
 #ifndef HHUOS_AHCICONTROLLER_H
 #define HHUOS_AHCICONTROLLER_H
 
+#include <cstdint>
 #include "kernel/interrupt/InterruptHandler.h"
 #include "device/cpu/IoPort.h"
 #include "lib/util/async/Spinlock.h"
@@ -97,7 +98,7 @@ namespace Device::Storage {
         unsigned int     total_usr_sectors[2]; /* Total number of user addressable sectors */
         unsigned short   transfer_time_pio;    /* Streaming Transfer time PIO */
         unsigned short   reserved105;       /* Word 105 */
-        unsigned short   sector_sz;          /* Puysical Sector size / Logical sector size */
+        unsigned short   sector_sz;          /* Physical Sector size / Logical sector size */
         unsigned short   inter_seek_delay;   /* In microseconds */
         unsigned short   words108_116[9];    /*  */
         unsigned int     words_per_sector;    /* words per logical sectors */
@@ -450,23 +451,19 @@ namespace Device::Storage {
 
             static Kernel::Logger log;
 
+            static int identifyDevice(HBA_PORT *port, uint8_t portno);
+            static bool read(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth, uint32_t count, void* buffer);
+            static bool write(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth, uint32_t count, void* buffer);
+            static void initializeAvailableControllers();
+            static uint32_t find_cmdslot(HBA_PORT *port);
             static int biosHandoff(const Device::PciDevice &device);
             static int enableAHCIController(const Device::PciDevice &device);
             static int check_type(HBA_PORT *port);
             static int hbaReset();
             static void portReset(HBA_PORT *port);
-            static uint32_t find_cmdslot(HBA_PORT *port);
-            static void initializeAvailableControllers();
-            static void IDENTIFYdrive(int portno);
-            static void port_rebase(HBA_PORT *port, int portno);
             static void start_cmd(HBA_PORT *port);
             static void stop_cmd(HBA_PORT *port);
-            static bool read(HBA_PORT *port, uint32_t startl, uint32_t starth, uint32_t count, uint16_t *buf);
-            static bool write(HBA_PORT *port, uint32_t startl, uint32_t starth, uint32_t count, uint16_t *buf);
-            static void probe_ports(HBA_MEM *abar);
-            static int  identifyDevice(HBA_PORT *port);
-
-            static int SATA_Commander(HBA_PORT *port, uint16_t Command, uint8_t rw, uint32_t buf, uint32_t prdtl, uint32_t dbc, uint32_t startl, uint32_t starth, uint32_t count);
+            static void port_rebase(HBA_PORT *port, int portno);
 
             void plugin() override;
             void trigger(const Kernel::InterruptFrame &frame) override;
