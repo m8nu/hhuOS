@@ -21,8 +21,6 @@
 #include "lib/util/collection/ArrayList.h"
 #include "lib/util/collection/Iterator.h"
 
-#include <cstring> // Include the header file for memcpy
-
 namespace Kernel {
     class Logger;
 }
