@@ -453,6 +453,8 @@ namespace Device::Storage {
 
             static int identifyDevice(HBA_PORT *port, uint8_t portno);
             static bool read(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth, uint32_t count, void* buffer);
+            static bool readOneSector(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth);
+            static bool writeOneSector(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth);
             static bool write(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth, uint32_t count, void* buffer);
             static void initializeAvailableControllers();
             static uint32_t find_cmdslot(HBA_PORT *port);
