@@ -491,7 +491,7 @@ namespace Device::Storage {
             static const uint16_t ATA_DEV_BUSY = 0x80;
             static const uint16_t ATA_DEV_DRQ = 0x08;
 
-            static const uint16_t HBA_PxIS_TFES = 0x25;
+            static const uint16_t HBA_PxIS_TFES = (1 << 30);
 
             // Definition der Gerätetypen
             static const int AHCI_DEV_NULL = 0;

@@ -421,11 +421,11 @@ namespace Device::Storage {
         cmdfis->rsv0     = 0x00;
 
         auto dba = reinterpret_cast<uint32_t*>(memoryService.mapIO(512));
-        dba[0] = 0x12345678;
-        dba[1] = 0x87654321;
-        dba[2] = 0x12345678;
-        dba[3] = 0x87654321;
-        dba[4] = 0x12345678;
+        dba[0] = 0x99999999;
+        dba[1] = 0x99999999;
+        dba[2] = 0x99999999;
+        dba[3] = 0x99999999;
+        dba[4] = 0x99999999;
 
         auto dbaphy = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(dba));
         cmdtbl->prdt_entry[0].dba = dbaphy;
