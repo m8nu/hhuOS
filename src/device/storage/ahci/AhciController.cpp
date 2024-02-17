@@ -33,6 +33,8 @@ namespace Device::Storage {
     uint32_t sector_size[32]; //sector size of each port in bytes (512 or 4096)
     bool supports48LBA[32]; //true if port supports 48-bit LBA
 
+    int debug = 0;
+
     char* strip_and_swap(char *str, int len){
         char *str2 = new char[len+1];
         int k;
@@ -63,32 +65,35 @@ namespace Device::Storage {
     AhciController::AhciController(const PciDevice &device) {
         auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
 
+        //enable bus mastering
+        uint16_t command = device.readWord(Pci::COMMAND);
+        command |= Pci::BUS_MASTER | Pci::IO_SPACE;
+        device.writeWord(Pci::COMMAND, command);
+
         //ABAR auslesen und mappen
         uint32_t abar = device.readDoubleWord(Pci::BASE_ADDRESS_5);
         hbaMem = MapAHCIRegisters(abar);
-        log.info("device id: %x, vendor id: %x", device.getDeviceId(), device.getVendorId());
-        log.info("ahci version: %x", hbaMem->vs);
+        log.info("Initializing controller [0x%x:0x%x]", device.getVendorId(), device.getDeviceId());
 
         //Ownership übernehmen (AHCI Version >= 1.2)
         biosHandoff(device);
+
 
         //AHCI Modus aktivieren
         if(enableAHCIController(device) == -1){
             log.error("AHCI Controller could not be enabled");
             return;
+        } else {
+            log.info("AHCI Controller [0x%x] runs in AHCI-Mode", device.getDeviceId()); 
         }
 
         //CAP.NP auslesen um Anzahl der Ports zu ermitteln, die vom HBA unterstützt werden
         uint8_t numPortsAllowed = (hbaMem->cap & 0x1F) + 1;
-        log.info("Number of ports allowed: %u", numPortsAllowed);
 
         for (uint8_t i = 0; i < 1; i++) { //i < AHCI_MAX_PORTS
             if(hbaMem->pi & (1 << i)){
 
                 portReset(&hbaMem->ports[i]);
-
-                log.info("Port Status: %x", hbaMem->ports[i].ssts);
-                log.info("Port Control: %x", hbaMem->ports[i].sctl);
 
                 //Speicher für Command List und FIS reservieren
                 port_rebase(&hbaMem->ports[i], i);
@@ -102,21 +107,15 @@ namespace Device::Storage {
                 //Enable interrupts
                 hbaMem->ports[i].ie = 0xFFFFFFFF;
 
-                log.info("Port Control: %x", hbaMem->ports[i].sctl);
-                
                 //Detect what device is connected to the port
                 int dt = check_type(&hbaMem->ports[i]);
 			    if (dt == AHCI_DEV_SATA){
-                    log.info("SATA drive found at port %d", i);
-                    log.info("Port Status: %x", hbaMem->ports[i].ssts);
                     identifyDevice(&hbaMem->ports[i], i);
 
                     writeOneSector(&hbaMem->ports[i], i, 500, 0);
+                    //writeOneSector(&hbaMem->ports[i], i, 501, 0);
+
                     readOneSector(&hbaMem->ports[i], i, 500, 0);
-
-                    //auto buffer = reinterpret_cast<uint32_t*>(memoryService.mapIO(512));
-                    //read(&hbaMem->ports[i], i, 500, 0, 1, buffer);
-
                 }else if (dt == AHCI_DEV_SATAPI){
                     log.info("SATAPI drive found at port %d", i);
 			    }else if (dt == AHCI_DEV_SEMB){
@@ -134,16 +133,13 @@ namespace Device::Storage {
     int AhciController::identifyDevice(HBA_PORT *port, uint8_t portno) {
         auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
 
-
         port->is = (uint32_t) -1;		// Clear pending interrupt bits
 
         //get unused command slot
         uint32_t slot = find_cmdslot(port);
-        log.info("slot: %u", slot);
 
         //HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*)(port->clb);
         HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*) vpa[portno].cmdList;
-        log.info("identify clb: %x", port->clb);
         cmdheader += slot;
         cmdheader->prdtl = 1;	// PRDT entries count
         cmdheader->pmp = 0;		// Port multiplier value
@@ -194,13 +190,11 @@ namespace Device::Storage {
             if ((port->ci & (1 << slot)) == 0) 
                 break;
             if (port->is & HBA_PxIS_TFES) { //Task file error
-                log.error("Read disk error\n");
+                log.error("Read disk error in Identify Device\n");
                 return false;
             }
         }
 
-        log.info("port->ie: %x", port->ie);
-        log.info("port->is: %x", port->is);
 
         SATA_ident_t *SATA_Identify_info =(SATA_ident_t*)(dba);
 
@@ -212,7 +206,7 @@ namespace Device::Storage {
         sector_size[portno] = SATA_Identify_info->sector_bytes;
         supports48LBA[portno] = SATA_Identify_info->command_set_2 & (1 << 10);
 
-        log.info("Found SATA drive: %s on port [%d]: %s (Firmware: [%s])", serial, portno, mdl, fw);
+        log.info("Found SATA drive on port [%d]: %s %s (Firmware: [%s])", portno, mdl, serial, fw);
         return 0;
     }
 
@@ -227,46 +221,52 @@ namespace Device::Storage {
 
         HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*) vpa[portno].cmdList;
         cmdheader += slot;
-        cmdheader->cfl = sizeof(FIS_REG_H2D) / sizeof(uint32_t);	// Command FIS size
-        cmdheader->w = 0;		// Read from device
-        cmdheader->prdtl = (uint16_t)((count - 1) >> 4) + 1;	// PRDT entries count
+        cmdheader->prdtl = (uint16_t)((count-1)>>4) + 1;	// PRDT entries count
+        cmdheader->pmp = 0;		// Port multiplier value
+	    cmdheader->a = 0;   	// ATAPI
+	    cmdheader->w = 0;		// Write, 1: H2D, 0: D2H
+	    cmdheader->p = 0;		// Prefetchable 0
+        cmdheader->r = 0;		// Reset
+	    cmdheader->b = 0;	    // BIST
+	    cmdheader->c = 0;	    // Clear busy upon R_OK 0
+        cmdheader->cfl = sizeof(FIS_REG_H2D) / 4;    // Command FIS length | sizeof(FIS_REG_H2D) / 4;
 
         HBA_CMD_TBL *cmdtbl = (HBA_CMD_TBL*) vpa[portno].commandTable[slot];
-
 
         auto bufphy = memoryService.getPhysicalAddress(buffer);
         // 8K bytes (16 sectors) per PRDT
         int i = 0;
         for (i = 0; i < cmdheader->prdtl - 1; i++){
-            cmdtbl->prdt_entry[i].dba = (uint32_t)(uint64_t)bufphy;
-            cmdtbl->prdt_entry[i].dbau = 0; // (uint32_t)((uint64_t)buffer >> 32);
-            cmdtbl->prdt_entry[i].dbc = 0x2000 - 1;
+            cmdtbl->prdt_entry[i].dba = (uint32_t)bufphy;
+            cmdtbl->prdt_entry[i].dbc = 8*1024 - 1;
             cmdtbl->prdt_entry[i].i = 1;
-            bufphy = (uint8_t*)bufphy + 0x2000;
+            bufphy = bufphy + 4*1024; // 4K bytes
             count -= 16;
         }
 
-        cmdtbl->prdt_entry[i].dba = (uint32_t)(uint64_t)bufphy;
-        cmdtbl->prdt_entry[i].dbau = 0; //(uint32_t)((uint64_t)buffer >> 32);
+        cmdtbl->prdt_entry[i].dba = (uint32_t)bufphy;
+        cmdtbl->prdt_entry[i].dbau = 0;
         cmdtbl->prdt_entry[i].dbc = (count << 9) - 1; // 512 bytes per sector
         cmdtbl->prdt_entry[i].i = 1;
 
         FIS_REG_H2D *cmdfis = (FIS_REG_H2D*) cmdtbl->cfis;
-        cmdfis->fis_type = FIS_TYPE_REG_H2D;
-        cmdfis->c = 1;	// Command
-        cmdfis->command = ATA_CMD_READ_DMA_EX;
-
-        cmdfis->lba0 = (uint8_t)startl;
-        cmdfis->lba1 = (uint8_t)(startl >> 8);
-        cmdfis->lba2 = (uint8_t)(startl >> 16);
-        cmdfis->device = 1 << 6;	// LBA mode
-
-        cmdfis->lba3 = (uint8_t)(startl >> 24);
-        cmdfis->lba4 = (uint8_t)starth;
-        cmdfis->lba5 = (uint8_t)(starth >> 8);
+        cmdfis->fis_type = FIS_TYPE_REG_H2D; //0x27
+        cmdfis->c = 1; //Command
+        cmdfis->command = ATA_CMD_READ_DMA_EX; //0xEC
+        cmdfis->featurel = 0x00;
+        cmdfis->featureh = 0x00;
+        cmdfis->device   = 0xA0;	// LBA mode
+        cmdfis->lba0     = (uint8_t)startl;
+        cmdfis->lba1     = (uint8_t)(startl >> 8);
+        cmdfis->lba2     = (uint8_t)(startl >> 16);
+        cmdfis->lba3     = (uint8_t)(startl >> 24);
+        cmdfis->lba4     = (uint8_t)starth;
+        cmdfis->lba5     = (uint8_t)(starth >> 8);
+        cmdfis->control  = 0x08;
 
         cmdfis->countl = count & 0xFF;
         cmdfis->counth = (count >> 8) & 0xFF;
+        cmdfis->rsv0     = 0x00;
 
         // The below loop waits until the port is no longer busy before issuing the command
         while ((port->tfd & (ATA_DEV_BUSY | ATA_DEV_DRQ)) && spin < 1000000) {
@@ -307,11 +307,9 @@ namespace Device::Storage {
 
         //get unused command slot
         uint32_t slot = find_cmdslot(port);
-        log.info("slot: %u", slot);
 
         //HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*)(port->clb);
-        HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*) vpa[0].cmdList;
-        log.info("identify clb: %x", port->clb);
+        HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*) vpa[portno].cmdList;
         cmdheader += slot;
         cmdheader->prdtl = 1;	// PRDT entries count
         cmdheader->pmp = 0;		// Port multiplier value
@@ -323,7 +321,7 @@ namespace Device::Storage {
 	    cmdheader->c = 0;	    // Clear busy upon R_OK 0
         cmdheader->cfl = 5;    // Command FIS length | sizeof(FIS_REG_H2D) / 4;
 
-        HBA_CMD_TBL *cmdtbl = (HBA_CMD_TBL*) vpa[0].commandTable[slot];
+        HBA_CMD_TBL *cmdtbl = (HBA_CMD_TBL*) vpa[portno].commandTable[slot];
 
         //FIS
         FIS_REG_H2D *cmdfis = (FIS_REG_H2D*) cmdtbl->cfis;
@@ -365,15 +363,10 @@ namespace Device::Storage {
             }
         }
 
-        log.info("port->ie: %x", port->ie);
-        log.info("port->is: %x", port->is);
-
         //print the buffer
-        log.info("Buffer: %x", dba[0]);
-        log.info("Buffer: %x", dba[1]);
-        log.info("Buffer: %x", dba[2]);
-        log.info("Buffer: %x", dba[3]);
-        log.info("Buffer: %x", dba[4]);
+        for(int i = 0; i < 512; i++){
+            log.info("buffer[%d]: %x", i, dba[i]);
+        }
 
     }
 
@@ -383,11 +376,10 @@ namespace Device::Storage {
 
         //get unused command slot
         uint32_t slot = find_cmdslot(port);
-        log.info("slot: %u", slot);
+
 
         //HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*)(port->clb);
         HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*) vpa[0].cmdList;
-        log.info("identify clb: %x", port->clb);
         cmdheader += slot;
         cmdheader->prdtl = 1;	// PRDT entries count
         cmdheader->pmp = 0;		// Port multiplier value
@@ -421,11 +413,10 @@ namespace Device::Storage {
         cmdfis->rsv0     = 0x00;
 
         auto dba = reinterpret_cast<uint32_t*>(memoryService.mapIO(512));
-        dba[0] = 0x99999999;
-        dba[1] = 0x99999999;
-        dba[2] = 0x99999999;
-        dba[3] = 0x99999999;
-        dba[4] = 0x99999999;
+
+        for(int i = 0; i < 512; i++){
+            dba[i] = 11111111;
+        }
 
         auto dbaphy = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(dba));
         cmdtbl->prdt_entry[0].dba = dbaphy;
@@ -446,10 +437,6 @@ namespace Device::Storage {
                 return false;
             }
         }
-
-        log.info("port->ie: %x", port->ie);
-        log.info("port->is: %x", port->is);
-
         return true;
     }
 
@@ -562,7 +549,7 @@ namespace Device::Storage {
                 }
 
                 if ((hbaMem->bohc & ((1 << 4) | (1 << 1) | (1 << 0))) != (1 << 1)) {
-                    log.info("BIOS/OS Handoff failed for device: %u", device.getDeviceId());
+                    log.info("BIOS/OS Handoff failed for device: [0x%x]", device.getDeviceId());
                     return -1;
                 }
 
@@ -570,11 +557,11 @@ namespace Device::Storage {
                 hbaMem->bohc = hbaMem->bohc & ~(1 << 3);
 
             } else {
-                log.info("BIOS/OS Handoff not supported for device: %u", device.getDeviceId());
+                log.info("BIOS/OS Handoff not supported for device: [0x%x]", device.getDeviceId());
                 return 0;
             }
         } else{
-            log.info("AHCI Version < 1.2 for device: %x. skip BIOS/OS Handoff", device.getDeviceId());
+            log.info("AHCI Version < 1.2 for device: [0x%x]. skip BIOS/OS Handoff", device.getDeviceId());
             return 0;
         }
         return 0;
@@ -654,7 +641,6 @@ namespace Device::Storage {
         }
 
         port->serr = 0xFFFFFFFF;
-        log.info("Port Reset done");
     }
 
     void AhciController::start_cmd(HBA_PORT *port) {
