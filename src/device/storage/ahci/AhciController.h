@@ -27,7 +27,7 @@ namespace Device::Storage {
         uint32_t* commandTable[32];
     } virtual_port_addr_t;
 
-
+    //https://forum.osdev.org/viewtopic.php?f=1&t=30118
     typedef volatile struct SATA_ident{
         unsigned short   config;      /* lots of obsolete bit flags */
         unsigned short   cyls;      /* obsolete */
@@ -158,7 +158,7 @@ namespace Device::Storage {
         uint8_t  fis_type;	// FIS_TYPE_REG_H2D
     
         uint8_t  pmport:4;	// Port multiplier
-        uint8_t  rsv0:3;		// Reserved
+        uint8_t  rsv0:3;	// Reserved
         uint8_t  c:1;		// 1: Command, 0: Control
     
         uint8_t  command;	// Command register
@@ -482,6 +482,7 @@ namespace Device::Storage {
             static const uint32_t SATA_SIG_PM = 0x96690101;        // Port multiplier
 
             static const uint16_t ATA_IDENTIFY_DEVICE = 0xEC;
+            static const uint16_t ATAPI_IDENTIFY_DEVICE = 0xA1;
             static const uint16_t ATA_CMD_READ_DMA = 0xC8;
             static const uint16_t ATA_CMD_READ_DMA_EX = 0x25;
             static const uint16_t ATA_CMD_WRITE_DMA = 0xCA;

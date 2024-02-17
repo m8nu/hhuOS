@@ -93,9 +93,6 @@ namespace Device::Storage {
                 //Speicher für Command List und FIS reservieren
                 port_rebase(&hbaMem->ports[i], i);
 
-                //Enable receiving FISes
-                hbaMem->ports[i].cmd |= (1 << 4);
-
                 //Clear errors
                 hbaMem->ports[i].serr = 0xFFFFFFFF;
 
@@ -145,7 +142,7 @@ namespace Device::Storage {
         log.info("slot: %u", slot);
 
         //HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*)(port->clb);
-        HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*) vpa[0].cmdList;
+        HBA_CMD_HEADER *cmdheader = (HBA_CMD_HEADER*) vpa[portno].cmdList;
         log.info("identify clb: %x", port->clb);
         cmdheader += slot;
         cmdheader->prdtl = 1;	// PRDT entries count
@@ -161,7 +158,7 @@ namespace Device::Storage {
         //Byte count field is 0 based reprensentation of 512 bytes, the size of data we expect on return
         cmdheader->prdbc = 511;
 
-        HBA_CMD_TBL *cmdtbl = (HBA_CMD_TBL*) vpa[0].commandTable[slot];
+        HBA_CMD_TBL *cmdtbl = (HBA_CMD_TBL*) vpa[portno].commandTable[slot];
         //HBA_CMD_TBL *cmdtbl = (HBA_CMD_TBL*)(cmdheader->ctba);
         //FIS
         FIS_REG_H2D *cmdfis = (FIS_REG_H2D*) cmdtbl->cfis;
@@ -174,7 +171,7 @@ namespace Device::Storage {
         cmdfis->lba0     = 0x00;
         cmdfis->lba1     = 0x00;
         cmdfis->lba2     = 0x00;
-        cmdfis->device   = 0xA0;
+        cmdfis->device   = 0xA0; //(1 << 6);
         cmdfis->lba3     = 0x00;
         cmdfis->lba4     = 0x00;
         cmdfis->lba5     = 0x00;
@@ -333,6 +330,8 @@ namespace Device::Storage {
         cmdfis->fis_type = FIS_TYPE_REG_H2D; //0x27
         cmdfis->c = 1; //Command
         cmdfis->command = ATA_CMD_READ_DMA_EX; //0xEC
+        cmdfis->countl   = 0x01;
+        cmdfis->counth   = 0x00;
         cmdfis->featurel = 0x00;
         cmdfis->featureh = 0x00;
         cmdfis->device   = 0xA0;
@@ -375,7 +374,7 @@ namespace Device::Storage {
         log.info("Buffer: %x", dba[2]);
         log.info("Buffer: %x", dba[3]);
         log.info("Buffer: %x", dba[4]);
-        
+
     }
 
     bool AhciController::writeOneSector(HBA_PORT *port, int portno, uint32_t startl, uint32_t starth){
@@ -407,6 +406,8 @@ namespace Device::Storage {
         cmdfis->fis_type = FIS_TYPE_REG_H2D; //0x27
         cmdfis->c = 1; //Command
         cmdfis->command = ATA_CMD_WRITE_DMA_EX; //0xEC
+        cmdfis->countl   = 0x01;
+        cmdfis->counth   = 0x00;
         cmdfis->featurel = 0x00;
         cmdfis->featureh = 0x00;
         cmdfis->device   = 0xA0;
@@ -420,8 +421,6 @@ namespace Device::Storage {
         cmdfis->rsv0     = 0x00;
 
         auto dba = reinterpret_cast<uint32_t*>(memoryService.mapIO(512));
-
-        //write buffer
         dba[0] = 0x12345678;
         dba[1] = 0x87654321;
         dba[2] = 0x12345678;
@@ -443,7 +442,7 @@ namespace Device::Storage {
             if ((port->ci & (1 << slot)) == 0) 
                 break;
             if (port->is & HBA_PxIS_TFES) { //Task file error
-                log.error("Read disk error\n");
+                log.error("Write disk error\n");
                 return false;
             }
         }
@@ -547,7 +546,7 @@ namespace Device::Storage {
                 return i;
             slots >>= 1;
         }
-        log.info("Cannot find free command list entry");
+        log.error("Cannot find free command list entry");
         return -1;
     }
 
