@@ -296,166 +296,21 @@ namespace Device::Storage {
         FIS_TYPE_DEV_BITS	= 0xA1,	// Set device bits FIS - device to host
     };
 
-    typedef volatile struct tagFIS_REG_D2H{
-    	// DWORD 0
-    	uint8_t  fis_type;    // FIS_TYPE_REG_D2H
-    
-    	uint8_t  pmport:4;    // Port multiplier
-    	uint8_t  rsv0:2;      // Reserved
-    	uint8_t  i:1;         // Interrupt bit
-    	uint8_t  rsv1:1;      // Reserved
-    
-    	uint8_t  status;      // Status register
-    	uint8_t  error;       // Error register
-    
-    	// DWORD 1
-    	uint8_t  lba0;        // LBA low register, 7:0
-    	uint8_t  lba1;        // LBA mid register, 15:8
-    	uint8_t  lba2;        // LBA high register, 23:16
-    	uint8_t  device;      // Device register
-    
-    	// DWORD 2
-    	uint8_t  lba3;        // LBA register, 31:24
-    	uint8_t  lba4;        // LBA register, 39:32
-    	uint8_t  lba5;        // LBA register, 47:40
-    	uint8_t  rsv2;        // Reserved
-    
-    	// DWORD 3
-    	uint8_t  countl;      // Count register, 7:0
-    	uint8_t  counth;      // Count register, 15:8
-    	uint8_t  rsv3[2];     // Reserved
-    
-    	// DWORD 4
-    	uint8_t  rsv4[4];     // Reserved
-    } FIS_REG_D2H;
-
-    typedef volatile struct tagFIS_DMA_SETUP{
-	    // DWORD 0
-	    uint8_t  fis_type;	// FIS_TYPE_DMA_SETUP
-    
-	    uint8_t  pmport:4;	// Port multiplier
-	    uint8_t  rsv0:1;	// Reserved
-	    uint8_t  d:1;		// Data transfer direction, 1 - device to host
-	    uint8_t  i:1;		// Interrupt bit
-	    uint8_t  a:1;       // Auto-activate. Specifies if DMA Activate FIS is needed
-    
-        uint8_t  rsved[2];       // Reserved
-    
-	    //DWORD 1&2
-        uint64_t DMAbufferID;   // DMA Buffer Identifier. Used to Identify DMA buffer in host memory.
-                                // SATA Spec says host specific and not in Spec. Trying AHCI spec might work.
-
-        //DWORD 3
-        uint32_t rsvd;           //More reserved
-    
-        //DWORD 4
-        uint32_t DMAbufOffset;   //Byte offset into buffer. First 2 bits must be 0
-    
-        //DWORD 5
-        uint32_t TransferCount;  //Number of bytes to transfer. Bit 0 must be 0
-    
-        //DWORD 6
-        uint32_t resvd;          //Reserved
-    
-    } FIS_DMA_SETUP;
-
-    typedef volatile struct tagFIS_PIO_SETUP{
-	    // DWORD 0
-	    uint8_t  fis_type;	// FIS_TYPE_PIO_SETUP
-    
-	    uint8_t  pmport:4;	// Port multiplier
-	    uint8_t  rsv0:1;		// Reserved
-	    uint8_t  d:1;		// Data transfer direction, 1 - device to host
-	    uint8_t  i:1;		// Interrupt bit
-	    uint8_t  rsv1:1;
-    
-	    uint8_t  status;		// Status register
-	    uint8_t  error;		// Error register
-    
-	    // DWORD 1
-	    uint8_t  lba0;		// LBA low register, 7:0
-	    uint8_t  lba1;		// LBA mid register, 15:8
-	    uint8_t  lba2;		// LBA high register, 23:16
-	    uint8_t  device;		// Device register
-    
-	    // DWORD 2
-	    uint8_t  lba3;		// LBA register, 31:24
-	    uint8_t  lba4;		// LBA register, 39:32
-	    uint8_t  lba5;		// LBA register, 47:40
-	    uint8_t  rsv2;		// Reserved
-    
-	    // DWORD 3
-	    uint8_t  countl;		// Count register, 7:0
-	    uint8_t  counth;		// Count register, 15:8
-	    uint8_t  rsv3;		// Reserved
-	    uint8_t  e_status;	// New value of status register
-    
-	    // DWORD 4
-	    uint16_t tc;		// Transfer count
-	    uint8_t  rsv4[2];	// Reserved
-    } FIS_PIO_SETUP;
-
-    typedef volatile struct tagFIS_DEV_BITS {
-        uint8_t fis_type;
-        uint8_t pmport:4;
-        uint8_t rsvd[2];
-        uint8_t i:1;
-        uint8_t n:1;
-        uint8_t statusl;
-        uint8_t rsvd2:1;
-        uint8_t statush;
-        uint8_t rsvd3:1;
-        uint8_t error;
-    } FIS_DEV_BITS;
-
-    typedef volatile struct tagFIS_DATA {
-	    // DWORD 0
-	    uint8_t  fis_type;	// FIS_TYPE_DATA
-    
-	    uint8_t  pmport:4;	// Port multiplier
-	    uint8_t  rsv0:4;		// Reserved
-    
-	    uint8_t  rsv1[2];	// Reserved
-    
-	    // DWORD 1 ~ N
-	    uint32_t data[1];	// Payload
-    } FIS_DATA;
-    
-    typedef volatile struct tagHBA_FIS{
-	    // 0x00
-	    FIS_DMA_SETUP	dsfis;		// DMA Setup FIS
-	    uint8_t         pad0[4];
-    
-	    // 0x20
-	    FIS_PIO_SETUP	psfis;		// PIO Setup FIS
-	    uint8_t         pad1[12];
-    
-	    // 0x40
-	    FIS_REG_D2H	rfis;		// Register – Device to Host FIS
-	    uint8_t         pad2[4];
-    
-	    // 0x58
-	    FIS_DEV_BITS	sdbfis;		// Set Device Bit FIS
-    
-	    // 0x60
-	    uint8_t         ufis[64];
-    
-	    // 0xA0
-	    uint8_t   	rsv[0x100-0xA0];
-    } HBA_FIS;
-
     class AhciController : public Kernel::InterruptHandler {
 
         public: 
+            /**
+            * Constructor.
+            */
             explicit AhciController(const PciDevice &pciDevice);
 
-            static Kernel::Logger log;
+            int identifyDevice(HBA_PORT *port, uint8_t portno);
+            bool readOneSector(HBA_PORT *port, int portno, uint32_t startl, uint32_t starth);
+            bool writeOneSector(HBA_PORT *port, int portno, uint32_t startl, uint32_t starth);
+            bool read(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth, uint32_t count, void* buffer);
+            bool write(HBA_PORT *port, int portno, uint32_t startl, uint32_t starth, uint32_t count, void* buffer);
 
-            static int identifyDevice(HBA_PORT *port, uint8_t portno);
-            static bool read(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth, uint32_t count, void* buffer);
-            static bool readOneSector(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth);
-            static bool writeOneSector(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth);
-            static bool write(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth, uint32_t count, void* buffer);
+
             static void initializeAvailableControllers();
             static uint32_t find_cmdslot(HBA_PORT *port);
             static int biosHandoff(const Device::PciDevice &device);
@@ -471,7 +326,12 @@ namespace Device::Storage {
             void trigger(const Kernel::InterruptFrame &frame) override;
 
         private:
-            static const constexpr uint8_t ATA_CMD_IDENTIFY = 0xEC;
+
+            static Kernel::Logger log;
+
+
+
+
 
             static const constexpr uint8_t PCI_SUBCLASS_AHCI = 0x06; //Indicates that this is a Serial ATA device
             static const constexpr uint32_t AHCI_MAX_PORTS = 32;
@@ -491,7 +351,7 @@ namespace Device::Storage {
             static const uint16_t ATA_DEV_BUSY = 0x80;
             static const uint16_t ATA_DEV_DRQ = 0x08;
 
-            static const uint16_t HBA_PxIS_TFES = (1 << 30);
+            static const uint32_t HBA_PxIS_TFES = (1 << 30);
 
             // Definition der Gerätetypen
             static const int AHCI_DEV_NULL = 0;
@@ -508,40 +368,6 @@ namespace Device::Storage {
             static const uint16_t HBA_PxCMD_FRE =  0x0010;
             static const uint16_t HBA_PxCMD_FR  =  0x4000;
             static const uint16_t HBA_PxCMD_CR  =  0x8000;
-
-            enum Generic_Host_Control : uint8_t {
-                CAP = 0x00, //Host Capabilities
-                GHC = 0x04, //Global Host Control
-                IS  = 0x08, //Interrupt Status
-                PI  = 0x0C, //Ports Implemented
-                VS  = 0x10, //Version
-                CCC_CTL = 0x14, //Command Completion Coalescing Control
-                CCC_PORTS = 0x18, //Command Completion Coalsecing Ports
-                EM_LOC = 0x1C, //Enclosure Management Location
-                EM_CTL  = 0x20, //Enclosure Management Control
-                CAP2 = 0x24, //Extended Capabilities Register    (Version 1.2+)
-                BOHC = 0x28  //BIOS/OS Handoff Contol and Status (Version 1.2+)
-            };
-
-            enum Port_Register : uint8_t {
-                PxCLB = 0x00,   //Command List Base Address
-                PxCLBU = 0x04,  //Command List Base Address Upper 32-Bits
-                PXFB = 0x08,    //FIS Base Address
-                PxFBU = 0x0C,   //FIS Base Address Upper 32-Bits
-                PxIS = 0x10,    //Interrupt Status
-                PxIE = 0x14,    //Interrupt Enable
-                PxCMD = 0x18,   //Command and Status
-                PxTFD = 0x20,   //Task File Data
-                PxSIG = 0x24,   //Signature
-                PxSSTS = 0x28,  //SATA Status
-                PxSCTL = 0x2C,  //SATA Control
-                PxSERR = 0x30,  //Sata Error
-                PxSACT = 0x34,  //SATA Active
-                PxCI = 0x38,    //Command Issue
-                PxSNTF = 0x3C,  //SATA Notification
-                PxFBS = 0x40,   //FIS-based Switching Control
-                PxDEVSLP = 0x44 //Device Sleep
-            };
     };
 }
 #endif //HHUOS_AHCICONTROLLER_H
