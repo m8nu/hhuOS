@@ -21,12 +21,6 @@
 #include "lib/util/collection/ArrayList.h"
 #include "lib/util/collection/Iterator.h"
 
-namespace Device {
-    class PciDevice;
-    namespace Storage {
-        class AhciDevice;
-    } 
-}
 namespace Kernel {
     class Logger;
 }
@@ -56,18 +50,19 @@ namespace Device::Storage {
 
     HBA_MEM *MapAHCIRegisters(uint32_t baseAddress) {
         auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
-        void *mappedAddress = memoryService.mapIO(baseAddress, (uint32_t)4096); //size of HBA_MEM
+        void *mappedAddress = memoryService.mapIO(baseAddress, (uint32_t)4096);
 
         if (mappedAddress == nullptr) {
+            AhciController::log.error("Failed to map AHCI registers");
             return nullptr;
         }
         return reinterpret_cast<HBA_MEM *>(mappedAddress);
     }
 
     AhciController::AhciController(const PciDevice &device) {
-        auto &memoryservice = Kernel::System::getService<Kernel::MemoryService>();
+        auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
 
-        //Bus Mastering aktivieren
+        //enable bus mastering
         uint16_t command = device.readWord(Pci::COMMAND);
         command |= Pci::BUS_MASTER | Pci::IO_SPACE;
         device.writeWord(Pci::COMMAND, command);
@@ -75,11 +70,6 @@ namespace Device::Storage {
         //ABAR auslesen und mappen
         uint32_t abar = device.readDoubleWord(Pci::BASE_ADDRESS_5);
         hbaMem = MapAHCIRegisters(abar);
-        if(hbaMem == nullptr){
-            log.error("AHCI Controller [0x%x] could not be mapped", device.getDeviceId());
-            return;
-        }
-
         log.info("Initializing controller [0x%x:0x%x]", device.getVendorId(), device.getDeviceId());
 
         //Ownership übernehmen (AHCI Version >= 1.2)
@@ -96,35 +86,35 @@ namespace Device::Storage {
         //CAP.NP auslesen um Anzahl der Ports zu ermitteln, die vom HBA unterstützt werden
         uint8_t numPortsAllowed = (hbaMem->cap & 0x1F) + 1;
 
-        for (uint8_t i = 0; i < numPortsAllowed; i++) {
+        for (uint8_t i = 0; i < 1; i++) { //i < AHCI_MAX_PORTS
             if(hbaMem->pi & (1 << i)){
 
                 //Speicher für Command List und FIS reservieren
                 port_rebase(&hbaMem->ports[i], i);
 
-                //Error Register zurücksetzen
+                //Clear errors
                 hbaMem->ports[i].serr = 0xFFFFFFFF;
 
-                //Interrupt Status Register zurücksetzen
+                //Clear interrupt status
                 hbaMem->ports[i].is = 0xFFFFFFFF;
 
-                //Interrupts aktivieren
+                //Enable interrupts
                 hbaMem->ports[i].ie = 0xFFFFFFFF;
 
                 //Detect what device is connected to the port
                 int dt = check_type(&hbaMem->ports[i]);
 			    if (dt == AHCI_DEV_SATA){
-                    portReset(&hbaMem->ports[i]);
                     identifyDevice(&hbaMem->ports[i], i);
 
-                    auto buff = reinterpret_cast<uint32_t*>(memoryservice.mapIO(512 * 2048));
+                    int bytes = 20480 * 512;
+                    auto buffer = reinterpret_cast<uint32_t*>(memoryService.mapIO(bytes));
+                    for(int i=0; i<bytes/4; i++){
+                        buffer[i] = 0x44444444;
+                    }
 
-                    auto buffphy = memoryservice.getPhysicalAddress(buff);
-                    write(&hbaMem->ports[i], i, 100, 0, 2048, buff);
-
-                    auto read_buff = reinterpret_cast<uint32_t*>(memoryservice.mapIO(512 * 2048));
-                    auto read_buffphy = memoryservice.getPhysicalAddress(read_buff);
-                    read(&hbaMem->ports[i], i, 100, 0, 2048, read_buff);
+                    auto buffer2 = reinterpret_cast<uint32_t*>(memoryService.mapIO(bytes));
+                    log.info("sectors %d", bytes/512);
+                    //read(&hbaMem->ports[i], i, 500, 0, bytes/512, buffer2);
 
                 }else if (dt == AHCI_DEV_SATAPI){
                     log.info("SATAPI drive found at port %d", i);
@@ -133,7 +123,7 @@ namespace Device::Storage {
 			    }else if (dt == AHCI_DEV_PM){
 			    	log.info("PM drive found at port %d", i);
 			    }else{
-			    	//log.info("No drive found at port %d", i);
+			    	log.info("No drive found at port %d", i);
 			    }
             }
 		}
@@ -143,8 +133,7 @@ namespace Device::Storage {
     int AhciController::identifyDevice(HBA_PORT *port, uint8_t portno) {
         auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
 
-        // Clear pending interrupt bits
-        port->is = (uint32_t) -1;
+        port->is = (uint32_t) -1;		// Clear pending interrupt bits
 
         //get unused command slot
         uint32_t slot = find_cmdslot(port);
@@ -154,16 +143,14 @@ namespace Device::Storage {
         cmdheader->prdtl = 1;	// PRDT entries count
         cmdheader->pmp = 0;		// Port multiplier value
 	    cmdheader->a = 0;   	// ATAPI
-	    cmdheader->w = 0;		// Write
+	    cmdheader->w = 0;		// Write, 1: H2D, 0: D2H
 	    cmdheader->p = 0;		// Prefetchable 0
         cmdheader->r = 0;		// Reset
 	    cmdheader->b = 0;	    // BIST
 	    cmdheader->c = 0;	    // Clear busy upon R_OK 0
         cmdheader->cfl = 5;    // Command FIS length | sizeof(FIS_REG_H2D) / 4;
 
-
         HBA_CMD_TBL *cmdtbl = (HBA_CMD_TBL*) vpa[portno].commandTable[slot];
-
         //FIS
         FIS_REG_H2D *cmdfis = (FIS_REG_H2D*) cmdtbl->cfis;
         cmdfis->fis_type = FIS_TYPE_REG_H2D; //0x27
@@ -178,7 +165,7 @@ namespace Device::Storage {
         cmdfis->lba3     = 0x00;
         cmdfis->lba4     = 0x00;
         cmdfis->lba5     = 0x00;
-        cmdfis->control  = 0x00;
+        cmdfis->control  = 0x08;
         cmdfis->rsv0     = 0x00;
 
         auto dba = reinterpret_cast<uint32_t*>(memoryService.mapIO(512));
@@ -347,7 +334,7 @@ namespace Device::Storage {
         auto dba = reinterpret_cast<uint32_t*>(memoryService.mapIO(512));
         auto dbaphy = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(dba));
         cmdtbl->prdt_entry[0].dba = dbaphy;
-        cmdtbl->prdt_entry[0].dbc = 0x1FF; //512 bytes
+        cmdtbl->prdt_entry[0].dbc = 0x1FF; //511 bytes
 
         //Ensure that device is not busy
         while (port->tfd & (ATA_DEV_BUSY | ATA_DEV_DRQ)); 
@@ -366,10 +353,10 @@ namespace Device::Storage {
         }
 
         //print the buffer
-        for(int i = 0; i < 128; i++){
+        for(int i = 0; i < 512 / 4; i++){
             log.info("buffer[%d]: %x", i, dba[i]);
         }
-        return true;
+
     }
 
     bool AhciController::writeOneSector(HBA_PORT *port, int portno, uint32_t startl, uint32_t starth){
@@ -384,7 +371,7 @@ namespace Device::Storage {
         cmdheader->prdtl = 1;	// PRDT entries count
         cmdheader->pmp = 0;		// Port multiplier value
         cmdheader->a = 0;   	// ATAPI
-        cmdheader->w = 1;		// Write
+        cmdheader->w = 1;		// Write, 1: H2D, 0: D2H
         cmdheader->p = 0;		// Prefetchable 0
         cmdheader->r = 0;		// Reset
         cmdheader->b = 0;	    // BIST
@@ -409,13 +396,12 @@ namespace Device::Storage {
         cmdfis->lba3     = (uint8_t)(startl >> 24);
         cmdfis->lba4     = (uint8_t)starth;
         cmdfis->lba5     = (uint8_t)(starth >> 8);
-        cmdfis->control  = 0x08;
         cmdfis->rsv0     = 0x00;
 
         auto dba = reinterpret_cast<uint32_t*>(memoryService.mapIO(512));
 
-        for(int i = 0; i < 128; i++){
-            dba[i] = 0x11111111; //4 bytes / 1 dword
+        for(int i = 0; i < 512 / 4; i++){
+            dba[i] = i;
         }
 
         auto dbaphy = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(dba));
@@ -445,6 +431,7 @@ namespace Device::Storage {
 
         hbaMem->is = (uint32_t) -1;		// Clear pending interrupt bits
         int slot = find_cmdslot(port);
+        log.info("slot: %d", slot);
         if (slot == -1)
             return false;
 
@@ -523,9 +510,7 @@ namespace Device::Storage {
         Util::Array<PciDevice> devices = Pci::search(Pci::Class::MASS_STORAGE, PCI_SUBCLASS_AHCI);
         for (const auto &device: devices) {
             AhciController *controller = new AhciController(device);
-
-            //controller->plugin();
-            //controller->initializeDrives();
+            controller->plugin();
         }
     }
 
@@ -637,13 +622,13 @@ namespace Device::Storage {
 
         //write 1 PxSCTL.DET to 1
         port->sctl |= (1 << 0);
-        Util::Async::Thread::sleep(Util::Time::Timestamp::ofMilliseconds(1));
+        Util::Async::Thread::sleep(Util::Time::Timestamp::ofMilliseconds(5));
         //clear PxSCTL.DET
         port->sctl  &= ~(1 << 0);
 
         //wait until PxSSTS.DET is 3
         while((port->ssts & 0x0F) != HBA_PORT_DET_PRESENT){
-            Util::Async::Thread::sleep(Util::Time::Timestamp::ofMilliseconds(1));
+            Util::Async::Thread::sleep(Util::Time::Timestamp::ofMilliseconds(5));
         }
 
         port->serr = 0xFFFFFFFF;

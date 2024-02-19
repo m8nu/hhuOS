@@ -299,18 +299,15 @@ namespace Device::Storage {
     class AhciController : public Kernel::InterruptHandler {
 
         public: 
-            /**
-            * Constructor.
-            */
             explicit AhciController(const PciDevice &pciDevice);
 
-            int identifyDevice(HBA_PORT *port, uint8_t portno);
-            bool readOneSector(HBA_PORT *port, int portno, uint32_t startl, uint32_t starth);
-            bool writeOneSector(HBA_PORT *port, int portno, uint32_t startl, uint32_t starth);
-            bool read(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth, uint32_t count, void* buffer);
-            bool write(HBA_PORT *port, int portno, uint32_t startl, uint32_t starth, uint32_t count, void* buffer);
+            static Kernel::Logger log;
 
-
+            static int identifyDevice(HBA_PORT *port, uint8_t portno);
+            static bool read(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth, uint32_t count, void* buffer);
+            static bool readOneSector(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth);
+            static bool writeOneSector(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth);
+            static bool write(HBA_PORT *port,int portno, uint32_t startl, uint32_t starth, uint32_t count, void* buffer);
             static void initializeAvailableControllers();
             static uint32_t find_cmdslot(HBA_PORT *port);
             static int biosHandoff(const Device::PciDevice &device);
@@ -326,12 +323,7 @@ namespace Device::Storage {
             void trigger(const Kernel::InterruptFrame &frame) override;
 
         private:
-
-            static Kernel::Logger log;
-
-
-
-
+            static const constexpr uint8_t ATA_CMD_IDENTIFY = 0xEC;
 
             static const constexpr uint8_t PCI_SUBCLASS_AHCI = 0x06; //Indicates that this is a Serial ATA device
             static const constexpr uint32_t AHCI_MAX_PORTS = 32;
@@ -351,7 +343,7 @@ namespace Device::Storage {
             static const uint16_t ATA_DEV_BUSY = 0x80;
             static const uint16_t ATA_DEV_DRQ = 0x08;
 
-            static const uint32_t HBA_PxIS_TFES = (1 << 30);
+            static const uint16_t HBA_PxIS_TFES = (1 << 30);
 
             // Definition der Gerätetypen
             static const int AHCI_DEV_NULL = 0;
