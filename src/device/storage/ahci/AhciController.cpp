@@ -107,7 +107,9 @@ namespace Device::Storage {
 			    if (dt == AHCI_DEV_SATA){
                     identifyDevice(&hbaMem->ports[i], i);
 
-                    test_read_write(0, 20480);
+                    test_read_write(i, 2048, 5);
+                    test_read_write(i, 10240, 5);
+                    test_read_write(i, 20480, 5);
 
                 }else if (dt == AHCI_DEV_SATAPI){
                     log.info("SATAPI drive found at port %d", i);
@@ -696,48 +698,60 @@ namespace Device::Storage {
         log.info("AHCI Interrupt triggered");
     }
 
-    void AhciController::test_read_write(int portno, uint64_t sector) {
-        log.info("Write and read %d sectors (%d Bytes)", sector, sector * 512);
+    void AhciController::test_read_write(int portno, uint64_t sector, int repeat) {
+        int readtimes[repeat];
+        int writetimes[repeat];
         auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
 
-        auto buffer = reinterpret_cast<uint32_t*>(memoryService.mapIO(512 * sector));
-
-        for(uint64_t i = 0; i < (512 * sector) / 4; i++){
-            buffer[i] = 0x87654321;
-        }
-
-        int startl = 50;
-        uint64_t sec1 = sector;
-        uint64_t sec2 = sector;
-        
-        Util::Time::Timestamp start_write = Util::Time::getSystemTime();
-        while(sec1 > 0){
-            write(&hbaMem->ports[portno], portno, startl, 0, 128, buffer);
-            buffer += 128;
-            startl += 128;
-            sec1 -= 128;
-        }
-        Util::Time::Timestamp end_write = Util::Time::getSystemTime();
-        
-
+        auto buffer_write = reinterpret_cast<uint32_t*>(memoryService.mapIO(512 * sector));
         auto buffer_read = reinterpret_cast<uint32_t*>(memoryService.mapIO(512 * sector));
-        startl = 50;
-        Util::Time::Timestamp start_read = Util::Time::getSystemTime();
-        while(sec2 > 0){
-            read(&hbaMem->ports[portno], portno, startl, 0, 128, buffer_read);
-            buffer += 128;
-            startl += 128;
-            sec2 -= 128;
-        };
-        Util::Time::Timestamp end_read = Util::Time::getSystemTime();
+        for(uint64_t i = 0; i < (512 * sector) / 4; i++){
+            buffer_write[i] = 0x87654321;
+        }
+        for(int i = 0; i < repeat; i++){
+            int startl = 50;
+            uint64_t sec1 = sector;
+            uint64_t sec2 = sector;
+        
+            Util::Time::Timestamp start_write = Util::Time::getSystemTime();
+            while(sec1 > 0){
+                write(&hbaMem->ports[portno], portno, startl, 0, 128, buffer_write);
+                buffer_write += 128;
+                startl += 128;
+                sec1 -= 128;
+            }
+            Util::Time::Timestamp end_write = Util::Time::getSystemTime();
+        
 
-        uint32_t sw = start_write.toMilliseconds();
-        uint32_t ew = end_write.toMilliseconds();
-        uint32_t sr = start_read.toMilliseconds();
-        uint32_t er = end_read.toMilliseconds();
+            startl = 50;
+            Util::Time::Timestamp start_read = Util::Time::getSystemTime();
+            while(sec2 > 0){
+                read(&hbaMem->ports[portno], portno, startl, 0, 128, buffer_read);
+                buffer_read += 128;
+                startl += 128;
+                sec2 -= 128;
+            };
+            Util::Time::Timestamp end_read = Util::Time::getSystemTime();
 
+            uint32_t sw = start_write.toMilliseconds();
+            uint32_t ew = end_write.toMilliseconds();
+            uint32_t sr = start_read.toMilliseconds();
+            uint32_t er = end_read.toMilliseconds();
 
-        log.info("Write: %d ms", ew - sw);
-        log.info("Read: %d ms", er - sr);
+            writetimes[i] = ew - sw;
+            readtimes[i] = er - sr;
+        }
+        double avg_write = 0;
+        double avg_read = 0;
+        for(int i = 0; i < repeat; i++){
+            avg_write += writetimes[i];
+            avg_read += readtimes[i];
+        }
+        avg_write = avg_write / repeat;
+        avg_read = avg_read / repeat;
+
+        log.info("%d repetitions, %d sectors transfered ",repeat, sector);
+        log.info("Average write time: %d ms", (int)avg_write);
+        log.info("Average read time: %d ms", (int)avg_read);
     }
 }

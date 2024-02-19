@@ -322,7 +322,7 @@ namespace Device::Storage {
             void plugin() override;
             void trigger(const Kernel::InterruptFrame &frame) override;
 
-            static void test_read_write(int portno, uint64_t sector);
+            static void test_read_write(int portno, uint64_t sector, int repeats);
 
         private:
             static const constexpr uint8_t ATA_CMD_IDENTIFY = 0xEC;
