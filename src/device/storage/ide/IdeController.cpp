@@ -457,8 +457,8 @@ uint16_t IdeController::performIO(const IdeController::DeviceInfo &info, IdeCont
         uint16_t sectors;
         if (supportsDma && info.supportsDma()) {
             // TODO: Reactivate DMA once issues on real hardware have been fixed
-            // sectors = performDmaIO(info, mode, reinterpret_cast<uint16_t*>(buffer + (processedSectors * info.sectorSize)), start, count);
-            sectors = performProgrammedIO(info, mode, reinterpret_cast<uint16_t*>(buffer + (processedSectors * info.sectorSize)), start, count);
+            sectors = performDmaIO(info, mode, reinterpret_cast<uint16_t*>(buffer + (processedSectors * info.sectorSize)), start, count);
+            //sectors = performProgrammedIO(info, mode, reinterpret_cast<uint16_t*>(buffer + (processedSectors * info.sectorSize)), start, count);
         } else {
             sectors = performProgrammedIO(info, mode, reinterpret_cast<uint16_t*>(buffer + (processedSectors * info.sectorSize)), start, count);
         }

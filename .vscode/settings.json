@@ -1,4 +1,7 @@
 {
     "cmake.configureOnOpen": true,
-    "cmake.generator": "Unix Makefiles"
+    "cmake.generator": "Unix Makefiles",
+    "files.associations": {
+        "*.tcc": "cpp"
+    }
 }

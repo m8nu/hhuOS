@@ -20,7 +20,6 @@
 #include "kernel/interrupt/InterruptVector.h"
 #include "lib/util/collection/ArrayList.h"
 #include "lib/util/collection/Iterator.h"
-#include <chrono>
 
 namespace Kernel {
     class Logger;
@@ -87,7 +86,7 @@ namespace Device::Storage {
         //CAP.NP auslesen um Anzahl der Ports zu ermitteln, die vom HBA unterstützt werden
         uint8_t numPortsAllowed = (hbaMem->cap & 0x1F) + 1;
 
-        for (uint8_t i = 0; i < 1; i++) { //i < AHCI_MAX_PORTS
+        for (uint8_t i = 0; i < numPortsAllowed; i++) { //i < AHCI_MAX_PORTS
             if(hbaMem->pi & (1 << i)){
 
                 //Speicher für Command List und FIS reservieren
@@ -107,9 +106,9 @@ namespace Device::Storage {
 			    if (dt == AHCI_DEV_SATA){
                     identifyDevice(&hbaMem->ports[i], i);
 
-                    test_read_write(i, 2048, 5);
-                    test_read_write(i, 10240, 5);
-                    test_read_write(i, 20480, 5);
+                    test_read_write(i, 2048, 100);
+                    //test_read_write(i, 10240, 100);
+                    //test_read_write(i, 20480 * 2, 100);
 
                 }else if (dt == AHCI_DEV_SATAPI){
                     log.info("SATAPI drive found at port %d", i);
@@ -118,7 +117,7 @@ namespace Device::Storage {
 			    }else if (dt == AHCI_DEV_PM){
 			    	log.info("PM drive found at port %d", i);
 			    }else{
-			    	log.info("No drive found at port %d", i);
+			    	//log.info("No drive found at port %d", i);
 			    }
             }
 		}
@@ -703,11 +702,17 @@ namespace Device::Storage {
         int writetimes[repeat];
         auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
 
+        int max_readtime = 0;
+        int max_writetime = 0;
+        int min_readtime = 0;
+        int min_writetime = 0;
+
         auto buffer_write = reinterpret_cast<uint32_t*>(memoryService.mapIO(512 * sector));
         auto buffer_read = reinterpret_cast<uint32_t*>(memoryService.mapIO(512 * sector));
         for(uint64_t i = 0; i < (512 * sector) / 4; i++){
             buffer_write[i] = 0x87654321;
         }
+        Util::Time::Timestamp total_start = Util::Time::getSystemTime();
         for(int i = 0; i < repeat; i++){
             int startl = 50;
             uint64_t sec1 = sector;
@@ -741,17 +746,40 @@ namespace Device::Storage {
             writetimes[i] = ew - sw;
             readtimes[i] = er - sr;
         }
+        Util::Time::Timestamp total_end = Util::Time::getSystemTime();
+
         double avg_write = 0;
         double avg_read = 0;
         for(int i = 0; i < repeat; i++){
+            if(i==0){
+                min_writetime = writetimes[i];
+                min_readtime = readtimes[i];
+            }
+            if(writetimes[i] > max_writetime){
+                max_writetime = writetimes[i];
+            }
+            if(readtimes[i] > max_readtime){
+                max_readtime = readtimes[i];
+            }
+            if(writetimes[i] < min_writetime){
+                min_writetime = writetimes[i];
+            }
+            if(readtimes[i] < min_readtime){
+                min_readtime = readtimes[i];
+            }
             avg_write += writetimes[i];
             avg_read += readtimes[i];
         }
         avg_write = avg_write / repeat;
         avg_read = avg_read / repeat;
 
-        log.info("%d repetitions, %d sectors transfered ",repeat, sector);
+        log.info("%d repetitions, %d sectors transfered",repeat, sector);
         log.info("Average write time: %d ms", (int)avg_write);
         log.info("Average read time: %d ms", (int)avg_read);
+        log.info("Min write time: %d ms", min_writetime);
+        log.info("Max write time: %d ms", max_writetime);
+        log.info("Min read time: %d ms", min_readtime);
+        log.info("Max read time: %d ms", max_readtime);
+        log.info("Total time: %d ms", (int)(total_end.toMilliseconds() - total_start.toMilliseconds()));
     }
 }
