@@ -322,6 +322,8 @@ namespace Device::Storage {
             void plugin() override;
             void trigger(const Kernel::InterruptFrame &frame) override;
 
+            static void test_read_write(int portno, uint64_t sector);
+
         private:
             static const constexpr uint8_t ATA_CMD_IDENTIFY = 0xEC;
 
@@ -343,7 +345,7 @@ namespace Device::Storage {
             static const uint16_t ATA_DEV_BUSY = 0x80;
             static const uint16_t ATA_DEV_DRQ = 0x08;
 
-            static const uint16_t HBA_PxIS_TFES = (1 << 30);
+            static const int HBA_PxIS_TFES = (1 << 30);
 
             // Definition der Gerätetypen
             static const int AHCI_DEV_NULL = 0;

@@ -20,6 +20,7 @@
 #include "kernel/interrupt/InterruptVector.h"
 #include "lib/util/collection/ArrayList.h"
 #include "lib/util/collection/Iterator.h"
+#include <chrono>
 
 namespace Kernel {
     class Logger;
@@ -106,15 +107,7 @@ namespace Device::Storage {
 			    if (dt == AHCI_DEV_SATA){
                     identifyDevice(&hbaMem->ports[i], i);
 
-                    int bytes = 20480 * 512;
-                    auto buffer = reinterpret_cast<uint32_t*>(memoryService.mapIO(bytes));
-                    for(int i=0; i<bytes/4; i++){
-                        buffer[i] = 0x44444444;
-                    }
-
-                    auto buffer2 = reinterpret_cast<uint32_t*>(memoryService.mapIO(bytes));
-                    log.info("sectors %d", bytes/512);
-                    //read(&hbaMem->ports[i], i, 500, 0, bytes/512, buffer2);
+                    test_read_write(0, 20480);
 
                 }else if (dt == AHCI_DEV_SATAPI){
                     log.info("SATAPI drive found at port %d", i);
@@ -356,7 +349,7 @@ namespace Device::Storage {
         for(int i = 0; i < 512 / 4; i++){
             log.info("buffer[%d]: %x", i, dba[i]);
         }
-
+        return true;
     }
 
     bool AhciController::writeOneSector(HBA_PORT *port, int portno, uint32_t startl, uint32_t starth){
@@ -401,7 +394,7 @@ namespace Device::Storage {
         auto dba = reinterpret_cast<uint32_t*>(memoryService.mapIO(512));
 
         for(int i = 0; i < 512 / 4; i++){
-            dba[i] = i;
+            dba[i] = 0x12345678;
         }
 
         auto dbaphy = reinterpret_cast<uint32_t>(memoryService.getPhysicalAddress(dba));
@@ -431,7 +424,6 @@ namespace Device::Storage {
 
         hbaMem->is = (uint32_t) -1;		// Clear pending interrupt bits
         int slot = find_cmdslot(port);
-        log.info("slot: %d", slot);
         if (slot == -1)
             return false;
 
@@ -702,5 +694,50 @@ namespace Device::Storage {
 
     void AhciController::trigger(const Kernel::InterruptFrame &frame) {
         log.info("AHCI Interrupt triggered");
+    }
+
+    void AhciController::test_read_write(int portno, uint64_t sector) {
+        log.info("Write and read %d sectors (%d Bytes)", sector, sector * 512);
+        auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
+
+        auto buffer = reinterpret_cast<uint32_t*>(memoryService.mapIO(512 * sector));
+
+        for(uint64_t i = 0; i < (512 * sector) / 4; i++){
+            buffer[i] = 0x87654321;
+        }
+
+        int startl = 50;
+        uint64_t sec1 = sector;
+        uint64_t sec2 = sector;
+        
+        Util::Time::Timestamp start_write = Util::Time::getSystemTime();
+        while(sec1 > 0){
+            write(&hbaMem->ports[portno], portno, startl, 0, 128, buffer);
+            buffer += 128;
+            startl += 128;
+            sec1 -= 128;
+        }
+        Util::Time::Timestamp end_write = Util::Time::getSystemTime();
+        
+
+        auto buffer_read = reinterpret_cast<uint32_t*>(memoryService.mapIO(512 * sector));
+        startl = 50;
+        Util::Time::Timestamp start_read = Util::Time::getSystemTime();
+        while(sec2 > 0){
+            read(&hbaMem->ports[portno], portno, startl, 0, 128, buffer_read);
+            buffer += 128;
+            startl += 128;
+            sec2 -= 128;
+        };
+        Util::Time::Timestamp end_read = Util::Time::getSystemTime();
+
+        uint32_t sw = start_write.toMilliseconds();
+        uint32_t ew = end_write.toMilliseconds();
+        uint32_t sr = start_read.toMilliseconds();
+        uint32_t er = end_read.toMilliseconds();
+
+
+        log.info("Write: %d ms", ew - sw);
+        log.info("Read: %d ms", er - sr);
     }
 }
