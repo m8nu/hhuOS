@@ -86,7 +86,7 @@ namespace Device::Storage {
         //CAP.NP auslesen um Anzahl der Ports zu ermitteln, die vom HBA unterstützt werden
         uint8_t numPortsAllowed = (hbaMem->cap & 0x1F) + 1;
 
-        for (uint8_t i = 0; i < numPortsAllowed; i++) { //i < AHCI_MAX_PORTS
+        for (uint8_t i = 0; i < numPortsAllowed; i++) {
             if(hbaMem->pi & (1 << i)){
 
                 //Speicher für Command List und FIS reservieren
@@ -105,11 +105,6 @@ namespace Device::Storage {
                 int dt = check_type(&hbaMem->ports[i]);
 			    if (dt == AHCI_DEV_SATA){
                     identifyDevice(&hbaMem->ports[i], i);
-
-                    test_read_write(i, 2048, 100);
-                    //test_read_write(i, 10240, 100);
-                    //test_read_write(i, 20480 * 2, 100);
-
                 }else if (dt == AHCI_DEV_SATAPI){
                     log.info("SATAPI drive found at port %d", i);
 			    }else if (dt == AHCI_DEV_SEMB){
@@ -285,6 +280,7 @@ namespace Device::Storage {
         return true;
     }
 
+    //Nur für Testzwecke
     bool AhciController::readOneSector(HBA_PORT *port, int portno, uint32_t startl, uint32_t starth){
         auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
         port->is = (uint32_t) -1;		// Clear pending interrupt bits
@@ -353,6 +349,7 @@ namespace Device::Storage {
         return true;
     }
 
+    //Nur für Testzwecke
     bool AhciController::writeOneSector(HBA_PORT *port, int portno, uint32_t startl, uint32_t starth){
         auto &memoryService = Kernel::System::getService<Kernel::MemoryService>();
         port->is = (uint32_t) -1;		// Clear pending interrupt bits
@@ -697,6 +694,7 @@ namespace Device::Storage {
         log.info("AHCI Interrupt triggered");
     }
 
+    //Used for benchmarking
     void AhciController::test_read_write(int portno, uint64_t sector, int repeat) {
         int readtimes[repeat];
         int writetimes[repeat];
@@ -710,7 +708,7 @@ namespace Device::Storage {
         auto buffer_write = reinterpret_cast<uint32_t*>(memoryService.mapIO(512 * sector));
         auto buffer_read = reinterpret_cast<uint32_t*>(memoryService.mapIO(512 * sector));
         for(uint64_t i = 0; i < (512 * sector) / 4; i++){
-            buffer_write[i] = 0x87654321;
+            buffer_write[i] = i;
         }
         Util::Time::Timestamp total_start = Util::Time::getSystemTime();
         for(int i = 0; i < repeat; i++){
